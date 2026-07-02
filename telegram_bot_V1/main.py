@@ -4,6 +4,11 @@ from telegram import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, 
 from sqlalchemy import func
 from database import SessionLocal, CartItem, Product, Transaction
 from receipt_generator import generate_receipt_image
+from config import BOT_TOKEN, WHATSAPP_NUMBER
+from promotion_service import get_active_promos_for_products, calculate_cart_with_discounts, get_recommendations
+from admin_handlers import get_admin_conv_handler
+from admin_schedule_handlers import get_admin_schedule_handler
+from schedule_service import get_today_schedule_status, get_upcoming_schedules_receipt
 import math
 import datetime
 import os
@@ -51,12 +56,15 @@ def build_cart_text(user_id, prepend_text=""):
     if cart_items:
         text += "━━━━━━━━━━━━━━━━━━━━\n"
         text += "🛒 *Keranjang kamu:*\n\n"
-        total = 0
-        for product_id, item_name, price, qty in cart_items:
-            subtotal = price * qty
-            total += subtotal
-            text += f"▪️ {item_name} x{qty} — Rp{subtotal:,}\n"
-        text += f"\n💰 *Total: Rp{total:,}*\n"
+        calc = calculate_cart_with_discounts(cart_items)
+        for item in calc["items"]:
+            text += f"▪️ {item['item_name']} x{item['qty']} — Rp{item['subtotal']:,}\n"
+            if item['discount_amount'] > 0:
+                text += f"   🏷️ Diskon — -Rp{item['discount_amount']:,}\n"
+        text += f"\n💰 *Subtotal: Rp{calc['subtotal']:,}*\n"
+        if calc["total_discount"] > 0:
+            text += f"🏷️ *Total Diskon: -Rp{calc['total_discount']:,}*\n"
+            text += f"💵 *Grand Total: Rp{calc['grand_total']:,}*\n"
         text += "━━━━━━━━━━━━━━━━━━━━"
     else:
         text += "_Keranjang masih kosong_"
@@ -76,7 +84,6 @@ def build_categories_keyboard():
     for cat in categories:
         cat_name = cat[0]
         # Using a short callback data to avoid Telegram's 64 byte limit
-        # In a real large app, you'd map categories to IDs. Here we truncate if needed.
         cb_data = f"cat_{cat_name[:20]}"
         row.append(InlineKeyboardButton(cat_name, callback_data=cb_data))
         if len(row) == 2:
@@ -93,7 +100,6 @@ def build_categories_keyboard():
 def build_products_keyboard(category_prefix, page=1):
     """Build the inline keyboard for products in a category with pagination."""
     db = SessionLocal()
-    # Match the category using LIKE since we might have truncated the prefix
     category = db.query(Product.category).filter(
         Product.category.startswith(category_prefix)).first()[0]
 
@@ -105,14 +111,25 @@ def build_products_keyboard(category_prefix, page=1):
     offset = (page - 1) * per_page
     products = db.query(Product).filter(Product.category ==
                                         category).offset(offset).limit(per_page).all()
+    
+    product_ids = [p.id for p in products]
+    promos = get_active_promos_for_products(product_ids)
     db.close()
 
     keyboard = []
 
     # Product Rows
     for p in products:
-        keyboard.append([InlineKeyboardButton(
-            f"{p.item_name} - Rp{p.price:,}", callback_data=f"noop")])
+        promo = promos.get(p.id)
+        if promo:
+            if promo["discount_type"] == "percentage":
+                label = f"🏷️ {p.item_name} - Rp{p.price:,} (-{promo['discount_value']}%)"
+            else:
+                label = f"🏷️ {p.item_name} - Rp{p.price:,} (-Rp{promo['discount_value']:,})"
+        else:
+            label = f"{p.item_name} - Rp{p.price:,}"
+            
+        keyboard.append([InlineKeyboardButton(label, callback_data=f"noop")])
         keyboard.append([
             InlineKeyboardButton(
                 "➖", callback_data=f"rem_{p.id}_{category_prefix}_{page}"),
@@ -228,21 +245,16 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         now = datetime.datetime.now()
         date_str = now.strftime("%d %B %Y %H:%M:%S")
 
-        # Calculate total
-        total = 0
-        for product_id, item_name, price, qty in cart_items:
-            subtotal = price * qty
-            total += subtotal
-
+        calc = calculate_cart_with_discounts(cart_items)
         payment_method = "Tunai (Cash)" if data == "pay_cash" else "QRIS"
 
         db = SessionLocal()
 
-        # Save transaction
+        # Save transaction (with grand_total after discount)
         new_trx = Transaction(
             user_id=user_id,
             payment_method=payment_method,
-            total_amount=total,
+            total_amount=calc["grand_total"],
             created_at=date_str
         )
         db.add(new_trx)
@@ -252,9 +264,24 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Generate sequential transaction number (e.g. INV-000001)
         trx_no = f"INV-{new_trx.id:06d}"
 
+        # Get recommendations
+        recommendations = get_recommendations(calc["purchased_categories"])
+
         # Generate Image receipt
+        store_schedule = get_upcoming_schedules_receipt()
         receipt_io = generate_receipt_image(
-            trx_no, date_str, cart_items, total, payment_method)
+            trx_no=trx_no,
+            date_str=date_str,
+            cart_items=cart_items,
+            total=calc["subtotal"],
+            payment_method=payment_method,
+            discount_details=calc["discount_details"],
+            total_discount=calc["total_discount"],
+            grand_total=calc["grand_total"],
+            recommendations=recommendations,
+            whatsapp_number=WHATSAPP_NUMBER,
+            store_schedule=store_schedule
+        )
 
         # Clear cart
         db.query(CartItem).filter(CartItem.user_id == user_id).delete()
@@ -339,13 +366,19 @@ async def handler_checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Keranjang kamu masih kosong.")
         return
 
+    calc = calculate_cart_with_discounts(cart_items)
+    
     order_text = "🧾 *Ringkasan Transaksi:*\n\n"
-    total = 0
-    for product_id, item_name, price, qty in cart_items:
-        subtotal = price * qty
-        total += subtotal
-        order_text += f"▪️ {item_name} x{qty} — Rp{subtotal:,}\n"
-    order_text += f"\n💰 *Total Transaksi: Rp{total:,}*"
+    for item in calc["items"]:
+        order_text += f"▪️ {item['item_name']} x{item['qty']} — Rp{item['subtotal']:,}\n"
+        if item['discount_amount'] > 0:
+            order_text += f"   🏷️ Diskon — -Rp{item['discount_amount']:,}\n"
+    
+    order_text += f"\n💰 *Subtotal: Rp{calc['subtotal']:,}*\n"
+    if calc["total_discount"] > 0:
+        order_text += f"🏷️ *Total Diskon: -Rp{calc['total_discount']:,}*\n"
+        order_text += f"💵 *Grand Total: Rp{calc['grand_total']:,}*"
+        
     order_text += "\n\nPilih metode pembayaran di bawah:"
 
     keyboard = [
@@ -362,7 +395,8 @@ async def handler_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handler_hours(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Kami buka 24 jam.")
+    status_text = get_today_schedule_status()
+    await update.message.reply_text(status_text, parse_mode="Markdown")
 
 
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -372,12 +406,11 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Main Entry Point ---
 
 if __name__ == "__main__":
-    token = os.getenv("BOT_TOKEN")
-    if not token:
-        raise RuntimeError(
-            "BOT_TOKEN environment variable is not set. Please set it before running the bot.")
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    app = ApplicationBuilder().token(token).build()
+    # Add Admin Handlers (ConversationHandler)
+    app.add_handler(get_admin_conv_handler())
+    app.add_handler(get_admin_schedule_handler())
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_click))
