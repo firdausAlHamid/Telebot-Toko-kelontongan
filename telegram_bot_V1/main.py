@@ -6,6 +6,7 @@ from database import SessionLocal, CartItem, Product, Transaction
 from receipt_generator import generate_receipt_image
 import math
 import datetime
+import os
 import random
 
 
@@ -44,9 +45,9 @@ def get_cart_summary(user_id):
 def build_cart_text(user_id, prepend_text=""):
     """Build the cart summary text."""
     cart_items = get_cart_summary(user_id)
-    
+
     text = prepend_text + "\n"
-    
+
     if cart_items:
         text += "━━━━━━━━━━━━━━━━━━━━\n"
         text += "🛒 *Keranjang kamu:*\n\n"
@@ -84,7 +85,8 @@ def build_categories_keyboard():
     if row:
         keyboard.append(row)
 
-    keyboard.append([InlineKeyboardButton("✅ Selesai Memilih", callback_data="done_ordering")])
+    keyboard.append([InlineKeyboardButton(
+        "✅ Selesai Memilih", callback_data="done_ordering")])
     return InlineKeyboardMarkup(keyboard)
 
 
@@ -92,39 +94,49 @@ def build_products_keyboard(category_prefix, page=1):
     """Build the inline keyboard for products in a category with pagination."""
     db = SessionLocal()
     # Match the category using LIKE since we might have truncated the prefix
-    category = db.query(Product.category).filter(Product.category.startswith(category_prefix)).first()[0]
-    
+    category = db.query(Product.category).filter(
+        Product.category.startswith(category_prefix)).first()[0]
+
     per_page = 5
-    total_products = db.query(Product).filter(Product.category == category).count()
+    total_products = db.query(Product).filter(
+        Product.category == category).count()
     total_pages = math.ceil(total_products / per_page)
-    
+
     offset = (page - 1) * per_page
-    products = db.query(Product).filter(Product.category == category).offset(offset).limit(per_page).all()
+    products = db.query(Product).filter(Product.category ==
+                                        category).offset(offset).limit(per_page).all()
     db.close()
 
     keyboard = []
-    
+
     # Product Rows
     for p in products:
-        keyboard.append([InlineKeyboardButton(f"{p.item_name} - Rp{p.price:,}", callback_data=f"noop")])
+        keyboard.append([InlineKeyboardButton(
+            f"{p.item_name} - Rp{p.price:,}", callback_data=f"noop")])
         keyboard.append([
-            InlineKeyboardButton("➖", callback_data=f"rem_{p.id}_{category_prefix}_{page}"),
-            InlineKeyboardButton("➕ Tambah", callback_data=f"add_{p.id}_{category_prefix}_{page}")
+            InlineKeyboardButton(
+                "➖", callback_data=f"rem_{p.id}_{category_prefix}_{page}"),
+            InlineKeyboardButton(
+                "➕ Tambah", callback_data=f"add_{p.id}_{category_prefix}_{page}")
         ])
 
     # Pagination Row
     nav_row = []
     if page > 1:
-        nav_row.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"page_{category_prefix}_{page-1}"))
+        nav_row.append(InlineKeyboardButton(
+            "⬅️ Prev", callback_data=f"page_{category_prefix}_{page-1}"))
     if page < total_pages:
-        nav_row.append(InlineKeyboardButton("Next ➡️", callback_data=f"page_{category_prefix}_{page+1}"))
+        nav_row.append(InlineKeyboardButton(
+            "Next ➡️", callback_data=f"page_{category_prefix}_{page+1}"))
     if nav_row:
         keyboard.append(nav_row)
 
     # Back to Categories Row
-    keyboard.append([InlineKeyboardButton("🔙 Kembali ke Kategori", callback_data="back_to_cat")])
-    keyboard.append([InlineKeyboardButton("✅ Selesai Memilih", callback_data="done_ordering")])
-    
+    keyboard.append([InlineKeyboardButton(
+        "🔙 Kembali ke Kategori", callback_data="back_to_cat")])
+    keyboard.append([InlineKeyboardButton(
+        "✅ Selesai Memilih", callback_data="done_ordering")])
+
     return InlineKeyboardMarkup(keyboard), category
 
 
@@ -159,7 +171,8 @@ async def handler_mulai(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handler_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler for the 'Katalog' button — shows categories."""
     user_id = update.effective_user.id
-    text = build_cart_text(user_id, "🏪 *Katalog Produk*\n\nSilakan pilih kategori:")
+    text = build_cart_text(
+        user_id, "🏪 *Katalog Produk*\n\nSilakan pilih kategori:")
     reply_markup = build_categories_keyboard()
     await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
 
@@ -182,13 +195,15 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("Keranjang kamu masih kosong. Tekan 🛒 Katalog & Pesan untuk memilih produk.")
             return
 
-        text = build_cart_text(user_id, "👍 Selesai memilih!\n\nTekan ✅ Selesaikan Transaksi pada menu utama untuk checkout.")
+        text = build_cart_text(
+            user_id, "👍 Selesai memilih!\n\nTekan ✅ Selesaikan Transaksi pada menu utama untuk checkout.")
         await query.edit_message_text(text, parse_mode="Markdown")
         return
 
     # Handle "back to categories"
     if data == "back_to_cat":
-        text = build_cart_text(user_id, "🏪 *Katalog Produk*\n\nSilakan pilih kategori:")
+        text = build_cart_text(
+            user_id, "🏪 *Katalog Produk*\n\nSilakan pilih kategori:")
         reply_markup = build_categories_keyboard()
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
         return
@@ -196,8 +211,10 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Handle category click (cat_<category_prefix>)
     if data.startswith("cat_"):
         cat_prefix = data[4:]
-        reply_markup, full_cat_name = build_products_keyboard(cat_prefix, page=1)
-        text = build_cart_text(user_id, f"📦 *Kategori: {full_cat_name}*\n\nPilih produk:")
+        reply_markup, full_cat_name = build_products_keyboard(
+            cat_prefix, page=1)
+        text = build_cart_text(
+            user_id, f"📦 *Kategori: {full_cat_name}*\n\nPilih produk:")
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
         return
 
@@ -207,20 +224,20 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not cart_items:
             await query.edit_message_text("Keranjang kamu masih kosong.")
             return
-            
+
         now = datetime.datetime.now()
         date_str = now.strftime("%d %B %Y %H:%M:%S")
-        
+
         # Calculate total
         total = 0
         for product_id, item_name, price, qty in cart_items:
             subtotal = price * qty
             total += subtotal
-            
+
         payment_method = "Tunai (Cash)" if data == "pay_cash" else "QRIS"
-        
+
         db = SessionLocal()
-        
+
         # Save transaction
         new_trx = Transaction(
             user_id=user_id,
@@ -231,12 +248,13 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.add(new_trx)
         db.commit()
         db.refresh(new_trx)
-        
+
         # Generate sequential transaction number (e.g. INV-000001)
         trx_no = f"INV-{new_trx.id:06d}"
 
         # Generate Image receipt
-        receipt_io = generate_receipt_image(trx_no, date_str, cart_items, total, payment_method)
+        receipt_io = generate_receipt_image(
+            trx_no, date_str, cart_items, total, payment_method)
 
         # Clear cart
         db.query(CartItem).filter(CartItem.user_id == user_id).delete()
@@ -245,10 +263,10 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Update the inline keyboard message to show success
         await query.edit_message_text("✅ Pembayaran berhasil diproses. Sedang mengirim struk...")
-        
+
         # Send the generated receipt as a photo
         await context.bot.send_photo(
-            chat_id=user_id, 
+            chat_id=user_id,
             photo=receipt_io,
             caption="🧾 *STRUK TRANSAKSI*\nSilakan klik Share dan cetak via RawBT.",
             parse_mode="Markdown"
@@ -260,8 +278,10 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parts = data.split("_")
         cat_prefix = parts[1]
         page = int(parts[2])
-        reply_markup, full_cat_name = build_products_keyboard(cat_prefix, page=page)
-        text = build_cart_text(user_id, f"📦 *Kategori: {full_cat_name}*\n\nPilih produk:")
+        reply_markup, full_cat_name = build_products_keyboard(
+            cat_prefix, page=page)
+        text = build_cart_text(
+            user_id, f"📦 *Kategori: {full_cat_name}*\n\nPilih produk:")
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
         return
 
@@ -271,15 +291,17 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         product_id = int(parts[1])
         cat_prefix = parts[2]
         page = int(parts[3])
-        
+
         db = SessionLocal()
         new_item = CartItem(user_id=user_id, product_id=product_id)
         db.add(new_item)
         db.commit()
         db.close()
-        
-        reply_markup, full_cat_name = build_products_keyboard(cat_prefix, page=page)
-        text = build_cart_text(user_id, f"📦 *Kategori: {full_cat_name}*\n\nPilih produk:")
+
+        reply_markup, full_cat_name = build_products_keyboard(
+            cat_prefix, page=page)
+        text = build_cart_text(
+            user_id, f"📦 *Kategori: {full_cat_name}*\n\nPilih produk:")
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
         return
 
@@ -289,7 +311,7 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         product_id = int(parts[1])
         cat_prefix = parts[2]
         page = int(parts[3])
-        
+
         db = SessionLocal()
         item_to_remove = db.query(CartItem).filter(
             CartItem.user_id == user_id,
@@ -299,9 +321,11 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
             db.delete(item_to_remove)
             db.commit()
         db.close()
-        
-        reply_markup, full_cat_name = build_products_keyboard(cat_prefix, page=page)
-        text = build_cart_text(user_id, f"📦 *Kategori: {full_cat_name}*\n\nPilih produk:")
+
+        reply_markup, full_cat_name = build_products_keyboard(
+            cat_prefix, page=page)
+        text = build_cart_text(
+            user_id, f"📦 *Kategori: {full_cat_name}*\n\nPilih produk:")
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
         return
 
@@ -348,7 +372,10 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Main Entry Point ---
 
 if __name__ == "__main__":
-    token = "8626634581:AAHVUmETYGPgNuM2m_vr5n263IbDWaP0xtE"
+    token = os.getenv("BOT_TOKEN")
+    if not token:
+        raise RuntimeError(
+            "BOT_TOKEN environment variable is not set. Please set it before running the bot.")
 
     app = ApplicationBuilder().token(token).build()
 
@@ -356,11 +383,15 @@ if __name__ == "__main__":
     app.add_handler(CallbackQueryHandler(button_click))
 
     app.add_handler(MessageHandler(filters.Regex("^🚀 Mulai$"), handler_mulai))
-    app.add_handler(MessageHandler(filters.Regex("^🛒 Katalog & Pesan$"), handler_menu))
-    app.add_handler(MessageHandler(filters.Regex("^📞 Kontak$"), handler_contact))
-    app.add_handler(MessageHandler(filters.Regex("^🕐 Jam Buka$"), handler_hours))
-    app.add_handler(MessageHandler(filters.Regex("^✅ Selesaikan Transaksi$"), handler_checkout))
-    
+    app.add_handler(MessageHandler(filters.Regex(
+        "^🛒 Katalog & Pesan$"), handler_menu))
+    app.add_handler(MessageHandler(
+        filters.Regex("^📞 Kontak$"), handler_contact))
+    app.add_handler(MessageHandler(
+        filters.Regex("^🕐 Jam Buka$"), handler_hours))
+    app.add_handler(MessageHandler(filters.Regex(
+        "^✅ Selesaikan Transaksi$"), handler_checkout))
+
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
 
     print("Bot is running...")

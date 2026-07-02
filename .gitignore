@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environment
+.venv/
+venv/
+
+# Local secrets and bot config
+.env
+.env.*
+*.env
+*.env.*
+secrets.json
+secrets.*.json
+bot_token.txt
+token.txt
+
+# Local database files
+*.db
+shop.db
