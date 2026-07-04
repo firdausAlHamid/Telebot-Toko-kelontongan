@@ -1,22 +1,67 @@
+# ===========================================
 # Python
+# ===========================================
 __pycache__/
 *.py[cod]
 *.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
 
-# Virtual environment
+# ===========================================
+# Virtual Environment
+# ===========================================
 .venv/
 venv/
+env/
+ENV/
 
-# Local secrets and bot config
+# ===========================================
+# Secrets & Config (PENTING! Jangan sampai ke-push)
+# ===========================================
 .env
 .env.*
 *.env
-*.env.*
-secrets.json
-secrets.*.json
-bot_token.txt
-token.txt
+config.py
 
-# Local database files
+# ===========================================
+# Database Files
+# ===========================================
 *.db
+*.sqlite3
 shop.db
+
+# ===========================================
+# IDE / Editor
+# ===========================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# ===========================================
+# OS Generated Files
+# ===========================================
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+
+# ===========================================
+# Logs
+# ===========================================
+*.log
+logs/
+
+# ===========================================
+# Gemini / AI Agent
+# ===========================================
+.agents/
