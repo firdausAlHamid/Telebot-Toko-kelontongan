@@ -1,13 +1,15 @@
 """
 Voice AI Handler — Handles voice notes from Telegram, processes them via
-Google Gemini AI for intent classification, and executes CRUD operations.
+OpenRouter AI (transcription + intent classification) and executes CRUD operations.
 
-Flow: Voice Note → Download OGG → Gemini AI (transcribe + parse)
-      → Show Confirmation → Admin approves/corrects/cancels → Execute CRUD
+Flow: Voice Note → Download OGG → OpenRouter Transcribe (STT)
+      → OpenRouter Chat (intent parse) → Show Confirmation
+      → Admin approves/corrects/cancels → Execute CRUD
 """
 
 import logging
 import os
+import io
 import json
 import tempfile
 import difflib
@@ -16,10 +18,12 @@ from datetime import datetime, date
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
-from google import genai
-from google.genai import types
+from openai import AsyncOpenAI
 
-from config import GEMINI_API_KEY, ADMIN_USERNAMES
+from config import (
+    OPENROUTER_API_KEY, GROQ_API_KEY, ADMIN_USERNAMES, 
+    GROQ_TRANSCRIPTION_MODEL, OPENROUTER_CHAT_MODEL
+)
 from database import SessionLocal, Product, Promotion, StoreSchedule
 from promotion_service import (
     create_promotion, list_promotions, delete_promotion, format_date_indo
@@ -29,14 +33,18 @@ from schedule_service import create_schedule, list_schedules, delete_schedule
 logger = logging.getLogger(__name__)
 
 # =============================================================================
-# GEMINI CLIENT SETUP
+# API CLIENTS SETUP
 # =============================================================================
 
-gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+openrouter_client = AsyncOpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=OPENROUTER_API_KEY,
+)
 
-GEMINI_MODEL = "gemini-2.5-flash"
-
-GEMINI_MODEL = "gemini-2.5-flash"
+groq_client = AsyncOpenAI(
+    base_url="https://api.groq.com/openai/v1",
+    api_key=GROQ_API_KEY,
+)
 
 def get_system_prompt():
     """Generate the system prompt dynamically with the current product catalog."""
@@ -103,49 +111,86 @@ DAFTAR PRODUK SAAT INI DI DATABASE (Sebagai referensi pencocokan):
 
 
 # =============================================================================
-# GEMINI COMMUNICATION
+# AI COMMUNICATION (Groq STT + OpenRouter Chat)
 # =============================================================================
+
+async def _transcribe_audio(audio_bytes: bytes) -> str:
+    """
+    Step 1: Send audio bytes to Groq for speech-to-text transcription.
+    Uses whisper-large-v3-turbo for super fast & free results.
+    Returns the transcribed text string.
+    """
+    audio_file = io.BytesIO(audio_bytes)
+    audio_file.name = "voice.ogg"
+
+    transcript = await groq_client.audio.transcriptions.create(
+        model=GROQ_TRANSCRIPTION_MODEL,
+        file=audio_file,
+    )
+    return transcript.text.strip()
+
+
+async def _parse_intent(text: str) -> dict:
+    """
+    Step 2: Send transcribed text to OpenRouter chat for intent classification.
+    Uses gemini-2.5-flash for cheap & optimal JSON parsing.
+    Returns a dict with 'intent' and 'parameters' keys.
+    """
+    system_prompt = get_system_prompt()
+
+    response = await openrouter_client.chat.completions.create(
+        model=OPENROUTER_CHAT_MODEL,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": text},
+        ],
+        temperature=0.1,  # Low temperature for consistent JSON output
+    )
+
+    raw_text = response.choices[0].message.content.strip()
+    logger.info(f"OpenRouter intent response: {raw_text}")
+
+    # Clean up response — remove markdown code fences if present
+    if raw_text.startswith("```"):
+        lines = raw_text.split("\n")
+        lines = [l for l in lines if not l.strip().startswith("```")]
+        raw_text = "\n".join(lines).strip()
+
+    return json.loads(raw_text)
+
 
 async def transcribe_and_parse(audio_bytes: bytes) -> dict:
     """
-    Send audio bytes to Gemini AI for transcription and intent parsing.
+    2-step pipeline:
+      1. Transcribe audio → text (via Groq Whisper API)
+      2. Parse text → JSON intent (via OpenRouter Gemini 2.5 Flash Free)
     Returns a dict with 'intent' and 'parameters' keys.
     """
     try:
-        prompt = get_system_prompt()
-        response = gemini_client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=[
-                prompt,
-                types.Part.from_bytes(
-                    data=audio_bytes,
-                    mime_type="audio/ogg",
-                ),
-            ],
-        )
+        # Step 1: Speech-to-Text via Groq
+        transcribed_text = await _transcribe_audio(audio_bytes)
+        logger.info(f"Transcribed text (Groq): {transcribed_text}")
 
-        raw_text = response.text.strip()
-        logger.info(f"Gemini raw response: {raw_text}")
+        if not transcribed_text:
+            return {
+                "intent": "unknown",
+                "parameters": {},
+                "message": "Tidak dapat mendengar suara. Coba ulangi perintahmu."
+            }
 
-        # Clean up response — remove markdown code fences if present
-        if raw_text.startswith("```"):
-            # Remove ```json and trailing ```
-            lines = raw_text.split("\n")
-            lines = [l for l in lines if not l.strip().startswith("```")]
-            raw_text = "\n".join(lines).strip()
-
-        result = json.loads(raw_text)
+        # Step 2: Intent Classification via OpenRouter
+        result = await _parse_intent(transcribed_text)
         return result
 
     except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse Gemini response as JSON: {e}\nRaw: {raw_text}")
+        logger.error(f"Failed to parse OpenRouter response as JSON: {e}")
         return {
             "intent": "unknown",
             "parameters": {},
-            "message": f"Gagal memproses respons AI. Coba ulangi perintahmu."
+            "message": "Gagal memproses respons AI. Coba ulangi perintahmu."
         }
     except Exception as e:
-        logger.error(f"Gemini API error: {e}")
+        logger.error(f"AI API error: {e}")
         return {
             "intent": "error",
             "parameters": {},
@@ -999,23 +1044,9 @@ async def handle_voice_text_correction(update: Update, context: ContextTypes.DEF
     )
 
     try:
-        # Send text to Gemini for re-parsing (as text, not audio)
-        prompt = get_system_prompt()
-        response = gemini_client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=[prompt, text_input],
-        )
-
-        raw_text = response.text.strip()
-        logger.info(f"Gemini correction response: {raw_text}")
-
-        # Clean up markdown fences
-        if raw_text.startswith("```"):
-            lines = raw_text.split("\n")
-            lines = [l for l in lines if not l.strip().startswith("```")]
-            raw_text = "\n".join(lines).strip()
-
-        parsed = json.loads(raw_text)
+        # Send text to OpenRouter for re-parsing (text only, no audio)
+        parsed = await _parse_intent(text_input)
+        logger.info(f"OpenRouter correction response: {parsed}")
         await process_parsed_intent(parsed, processing_msg, context)
 
     except json.JSONDecodeError:

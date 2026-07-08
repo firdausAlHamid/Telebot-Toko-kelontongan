@@ -14,9 +14,16 @@ import os
 # Get from @BotFather on Telegram
 BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
 
-# --- Gemini AI API Key ---
-# Get from https://aistudio.google.com/apikey
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "YOUR_GEMINI_API_KEY_HERE")
+# --- OpenRouter API Key ---
+# Get from https://openrouter.ai/keys
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "YOUR_OPENROUTER_API_KEY_HERE")
+
+# --- Groq API Key (For Transcription) ---
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "YOUR_GROQ_API_KEY_HERE")
+
+# --- Model Selection ---
+GROQ_TRANSCRIPTION_MODEL = "whisper-large-v3-turbo"
+OPENROUTER_CHAT_MODEL = "google/gemini-2.5-flash:free"
 
 # --- Admin Access ---
 # Telegram usernames (without @) allowed to manage promotions
