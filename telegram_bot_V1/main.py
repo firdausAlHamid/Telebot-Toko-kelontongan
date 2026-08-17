@@ -2,14 +2,21 @@ from telegram import Update, BotCommand
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters, CallbackQueryHandler
 from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from sqlalchemy import func
-from database import SessionLocal, CartItem, Product, Transaction
+from database import SessionLocal, CartItem, Product, Transaction, TransactionItem
 from receipt_generator import generate_receipt_image
-from config import BOT_TOKEN, WHATSAPP_NUMBER
+from config import BOT_TOKEN, WHATSAPP_NUMBER, DEVELOPER_TELEGRAM_ID
 from promotion_service import get_active_promos_for_products, calculate_cart_with_discounts, get_recommendations
 from admin_handlers import get_admin_conv_handler
 from admin_schedule_handlers import get_admin_schedule_handler
+from admin_report_handlers import (
+    get_report_conv_handler, get_void_conv_handler,
+    riwayat_command, handle_trx_detail_callback
+)
 from schedule_service import get_today_schedule_status, get_upcoming_schedules_receipt
 from voice_ai_handler import handle_voice, handle_voice_callback, handle_voice_text_correction
+from dev_handlers import get_dev_handler
+from vendor_handlers import get_vendor_handler
+from auth import bootstrap_developer, sync_user_info
 import math
 import datetime
 import os
@@ -428,6 +435,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _refresh_cache_if_needed()
     load_db_cart_to_memory(user_id, context)
 
+    # Keep username/full_name up-to-date for registered users
+    tg_user = update.effective_user
+    sync_user_info(tg_user.id, tg_user.username, tg_user.full_name)
+
     reply_markup = ReplyKeyboardMarkup(
         START_KEYBOARD,
         resize_keyboard=True,
@@ -643,18 +654,44 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         date_str = now.strftime("%d %B %Y %H:%M:%S")
         calc = calculate_cart_with_discounts(cart_items)
         payment_method = "Tunai (Cash)"
+        change = cash_total - grand_total
 
         db = SessionLocal()
         new_trx = Transaction(
             user_id=user_id,
             payment_method=payment_method,
-            total_amount=calc["grand_total"],
-            created_at=date_str
+            total_amount=calc["grand_total"],   # legacy compat
+            subtotal=calc["subtotal"],
+            total_discount=calc["total_discount"],
+            grand_total=calc["grand_total"],
+            cash_received=cash_total,
+            cash_change=change if change > 0 else 0,
+            status="completed",
+            created_at=now
         )
         db.add(new_trx)
         db.commit()
         db.refresh(new_trx)
         trx_no = f"INV-{new_trx.id:06d}"
+
+        # Save invoice_no back to the transaction
+        new_trx.invoice_no = trx_no
+
+        # Save transaction items (line-item snapshots)
+        for item in calc["items"]:
+            trx_item = TransactionItem(
+                transaction_id=new_trx.id,
+                product_id=item["product_id"],
+                product_name=item["item_name"],
+                unit_price=item["price"],
+                quantity=item["qty"],
+                discount_type=item["discount_type"],
+                discount_value=item["discount_value"] or 0,
+                discount_amount=item["discount_amount"],
+                subtotal=item["final_subtotal"]
+            )
+            db.add(trx_item)
+        db.commit()
 
         recommendations = get_recommendations(calc["purchased_categories"])
         store_schedule = get_upcoming_schedules_receipt()
@@ -692,6 +729,7 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await query.edit_message_text(
             f"✅ Pembayaran tunai berhasil!\n"
+            f"🧾 Invoice: {trx_no}\n"
             f"💵 Dibayar: Rp{cash_total:,}"
             f"{change_text}\n\n"
             f"Sedang mengirim struk...",
@@ -730,12 +768,16 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         db = SessionLocal()
 
-        # Save transaction (with grand_total after discount)
+        # Save transaction with full breakdown
         new_trx = Transaction(
             user_id=user_id,
             payment_method=payment_method,
-            total_amount=calc["grand_total"],
-            created_at=date_str
+            total_amount=calc["grand_total"],   # legacy compat
+            subtotal=calc["subtotal"],
+            total_discount=calc["total_discount"],
+            grand_total=calc["grand_total"],
+            status="completed",
+            created_at=now
         )
         db.add(new_trx)
         db.commit()
@@ -743,6 +785,23 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Generate sequential transaction number (e.g. INV-000001)
         trx_no = f"INV-{new_trx.id:06d}"
+        new_trx.invoice_no = trx_no
+
+        # Save transaction items (line-item snapshots)
+        for item in calc["items"]:
+            trx_item = TransactionItem(
+                transaction_id=new_trx.id,
+                product_id=item["product_id"],
+                product_name=item["item_name"],
+                unit_price=item["price"],
+                quantity=item["qty"],
+                discount_type=item["discount_type"],
+                discount_value=item["discount_value"] or 0,
+                discount_amount=item["discount_amount"],
+                subtotal=item["final_subtotal"]
+            )
+            db.add(trx_item)
+        db.commit()
 
         # Get recommendations
         recommendations = get_recommendations(calc["purchased_categories"])
@@ -861,8 +920,11 @@ async def handler_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🛒 *Untuk Pelanggan:*\n"
         "▪️ Tekan 🚀 Mulai untuk mulai belanja\n"
         "▪️ Pilih kategori → pilih produk → ✅ Selesai Memilih\n"
-        "▪️ Pilih metode bayar (Tunai/QRIS) → terima struk\n\n"
+        "▪️ Pilih metode bayar (Tunai/QRIS) → terima struk\n"
+        "▪️ /riwayat — Lihat riwayat transaksi kamu\n\n"
         "🔧 *Untuk Admin:*\n"
+        "▪️ /laporan — Laporan penjualan (harian/mingguan/bulanan)\n"
+        "▪️ /void — Void/batalkan transaksi hari ini\n"
         "▪️ /promo — Kelola promosi (tambah/edit/hapus)\n"
         "▪️ /jadwal — Kelola jadwal operasional toko\n"
         "▪️ 🎤 *Voice Note* — Kirim perintah suara untuk:\n"
@@ -882,13 +944,25 @@ async def handler_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def post_init(application):
-    """Register bot commands for Telegram's slash command menu."""
+    """Register bot commands and bootstrap the developer on startup."""
+    # Bootstrap developer account in DB (safe to call every start)
+    bootstrap_developer(
+        telegram_id=DEVELOPER_TELEGRAM_ID,
+        username="merkava1945",
+        full_name="Admiral Kuznetsov"
+    )
+
     commands = [
-        BotCommand("start", "🚀 Mulai bot"),
-        BotCommand("help", "📖 Panduan penggunaan"),
-        BotCommand("promo", "🏷️ Kelola promosi (admin)"),
-        BotCommand("jadwal", "🗓️ Kelola jadwal toko (admin)"),
-        BotCommand("cancel", "❌ Batalkan operasi"),
+        BotCommand("start",   "🚀 Mulai bot"),
+        BotCommand("help",    "📖 Panduan penggunaan"),
+        BotCommand("riwayat", "📜 Riwayat transaksi"),
+        BotCommand("laporan", "📊 Laporan penjualan (kasir/vendor)"),
+        BotCommand("void",    "❌ Void transaksi (kasir/vendor)"),
+        BotCommand("promo",   "🏷️ Kelola promosi (kasir/vendor)"),
+        BotCommand("jadwal",  "🗓️ Kelola jadwal toko (kasir/vendor)"),
+        BotCommand("panel",   "🏤 Panel vendor (pemilik toko)"),
+        BotCommand("dev",     "👨‍💻 Panel developer (sistem)"),
+        BotCommand("cancel",  "❌ Batalkan operasi"),
     ]
     await application.bot.set_my_commands(commands)
     # Pre-load product cache at startup
@@ -906,15 +980,22 @@ if __name__ == "__main__":
         .build()
     )
 
-    # Add Admin Handlers (ConversationHandler)
-    app.add_handler(get_admin_conv_handler())
-    app.add_handler(get_admin_schedule_handler())
+    # ConversationHandlers — order matters: more specific first
+    app.add_handler(get_dev_handler())           # /dev    — Developer panel (TOTP)
+    app.add_handler(get_vendor_handler())        # /panel  — Vendor panel
+    app.add_handler(get_admin_conv_handler())    # /promo  — Promotions CRUD
+    app.add_handler(get_admin_schedule_handler()) # /jadwal — Schedule CRUD
+    app.add_handler(get_report_conv_handler())   # /laporan — Sales reports
+    app.add_handler(get_void_conv_handler())     # /void   — Void transaction
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", handler_help))
+    app.add_handler(CommandHandler("start",    start))
+    app.add_handler(CommandHandler("help",     handler_help))
+    app.add_handler(CommandHandler("riwayat",  riwayat_command))
 
     # Voice confirmation callback handler (must be before generic button_click)
     app.add_handler(CallbackQueryHandler(handle_voice_callback, pattern="^vc_"))
+    # Transaction detail callback handler
+    app.add_handler(CallbackQueryHandler(handle_trx_detail_callback, pattern="^trx_detail_"))
     app.add_handler(CallbackQueryHandler(button_click))
 
     app.add_handler(MessageHandler(filters.Regex("^🚀 Mulai$"), handler_mulai))

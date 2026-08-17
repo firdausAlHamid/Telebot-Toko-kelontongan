@@ -12,7 +12,7 @@ from telegram.ext import (
     MessageHandler, ConversationHandler, filters
 )
 
-from config import ADMIN_USERNAMES
+from auth import is_kasir as _is_kasir
 from schedule_service import (
     create_schedule, list_schedules, delete_schedule, update_schedule
 )
@@ -31,9 +31,8 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 def is_admin(update: Update) -> bool:
-    """Check if the user is an authorized admin."""
-    username = update.effective_user.username
-    return username in ADMIN_USERNAMES
+    """Check if the user has admin-level access (kasir, vendor, or developer)."""
+    return _is_kasir(update.effective_user.id)
 
 
 # =============================================================================

@@ -21,9 +21,10 @@ from telegram.ext import ContextTypes
 from openai import AsyncOpenAI
 
 from config import (
-    OPENROUTER_API_KEY, GROQ_API_KEY, ADMIN_USERNAMES, 
+    OPENROUTER_API_KEY, GROQ_API_KEY,
     GROQ_TRANSCRIPTION_MODEL, OPENROUTER_CHAT_MODEL
 )
+from auth import is_kasir
 from database import SessionLocal, Product, Promotion, StoreSchedule
 from promotion_service import (
     create_promotion, list_promotions, delete_promotion, format_date_indo
@@ -862,12 +863,11 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     For read-only intents: executes immediately.
     """
     user = update.effective_user
-    username = user.username
 
-    # Admin check
-    if username not in ADMIN_USERNAMES:
+    # Role check — kasir, vendor, and developer can use voice commands
+    if not is_kasir(user.id):
         await update.message.reply_text(
-            "⛔ Maaf, fitur perintah suara hanya tersedia untuk admin."
+            "⛔ Maaf, fitur perintah suara hanya tersedia untuk staf terdaftar."
         )
         return
 
@@ -1029,9 +1029,8 @@ async def handle_voice_text_correction(update: Update, context: ContextTypes.DEF
     if not context.user_data.get("voice_correction_mode"):
         return False  # Signal that this handler didn't handle the message
 
-    # Check admin
-    username = update.effective_user.username
-    if username not in ADMIN_USERNAMES:
+    # Role check
+    if not is_kasir(update.effective_user.id):
         return False
 
     # Clear correction mode flag

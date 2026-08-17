@@ -14,6 +14,41 @@ Base = declarative_base()
 # --- Table Models ---
 
 
+class Tenant(Base):
+    """One record per store/kiosk registered in the system."""
+    __tablename__ = "tenants"
+
+    id           = Column(Integer, primary_key=True, autoincrement=True)
+    store_name   = Column(String(255), nullable=False)      # e.g. "Toko Budi", "Kios Melati"
+    owner_id     = Column(BigInteger, nullable=False)       # telegram_id of the vendor
+    is_active    = Column(Boolean, default=True)
+    created_at   = Column(DateTime, default=datetime.now)
+    updated_at   = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class BotUser(Base):
+    """
+    Registered users with assigned roles.
+    Auth is always based on telegram_id (permanent), never telegram_username (changeable).
+
+    Role hierarchy:
+        developer  > vendor  > kasir
+    """
+    __tablename__ = "bot_users"
+
+    id                 = Column(Integer, primary_key=True, autoincrement=True)
+    telegram_id        = Column(BigInteger, unique=True, nullable=False)   # Immutable Telegram user ID
+    telegram_username  = Column(String(100), nullable=True)               # For display only (@username)
+    full_name          = Column(String(255), nullable=True)               # Display name
+    role               = Column(String(20), nullable=False)               # developer / vendor / kasir
+    tenant_id          = Column(Integer, ForeignKey("tenants.id"), nullable=True)  # NULL for developer
+    is_active          = Column(Boolean, default=True)
+    totp_secret        = Column(String(100), nullable=True)               # TOTP 2FA — developer only
+    added_by           = Column(BigInteger, nullable=True)                # telegram_id of registrar
+    created_at         = Column(DateTime, default=datetime.now)
+    updated_at         = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
 class CartItem(Base):
     __tablename__ = "cart_items"
 
@@ -34,13 +69,49 @@ class Product(Base):
 
 
 class Transaction(Base):
+    """
+    Transaction record — stores completed (or voided) sales.
+    Phase 1 upgrade: added invoice_no, discount tracking, cash details, void support.
+    """
     __tablename__ = "transactions"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    invoice_no = Column(String(20), unique=True, nullable=True)   # INV-000001
     user_id = Column(BigInteger)
     payment_method = Column(String(50))
-    total_amount = Column(Integer)
-    created_at = Column(String(50))
+
+    # --- Amount breakdown ---
+    total_amount = Column(Integer, nullable=True)          # LEGACY — kept for old data
+    subtotal = Column(Integer, nullable=True)              # before discount
+    total_discount = Column(Integer, default=0)            # total discount applied
+    grand_total = Column(Integer, nullable=True)           # after discount (final)
+
+    # --- Cash payment details ---
+    cash_received = Column(Integer, nullable=True)         # money given by customer
+    cash_change = Column(Integer, nullable=True)           # change returned
+
+    # --- Status & Void ---
+    status = Column(String(20), default="completed")       # completed / voided
+    voided_at = Column(DateTime, nullable=True)
+    void_reason = Column(String(255), nullable=True)
+
+    created_at = Column(DateTime, default=datetime.now)    # FIX: was String(50)
+
+
+class TransactionItem(Base):
+    """Detail line-item per transaction — snapshot of what was purchased."""
+    __tablename__ = "transaction_items"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    transaction_id = Column(Integer, ForeignKey("transactions.id"), nullable=False)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    product_name = Column(String(255))       # snapshot nama produk saat beli
+    unit_price = Column(Integer)             # snapshot harga satuan saat beli
+    quantity = Column(Integer)
+    discount_type = Column(String(20), nullable=True)    # percentage / fixed_amount / null
+    discount_value = Column(Integer, default=0)          # e.g. 10 (for 10%)
+    discount_amount = Column(Integer, default=0)         # total potongan dalam Rupiah
+    subtotal = Column(Integer)               # (unit_price * qty) - discount_amount
 
 
 class Promotion(Base):
