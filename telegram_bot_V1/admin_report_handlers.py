@@ -13,7 +13,7 @@ from telegram.ext import (
     MessageHandler, ConversationHandler, filters
 )
 
-from auth import is_kasir, is_vendor
+from auth import is_kasir, is_owner
 from transaction_service import (
     get_daily_summary, get_period_summary, get_top_products,
     get_transaction_history, get_transaction_detail,
@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 def is_admin(update: Update) -> bool:
-    """Check if the user has admin-level access (kasir, vendor, or developer)."""
+    """Check if the user has admin-level access (owner or kasir)."""
     return is_kasir(update.effective_user.id)
 
 
@@ -315,8 +315,8 @@ async def void_cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def riwayat_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show last 5 transactions for the current user (or all for admin)."""
     user_id = update.effective_user.id
-    # Vendor & developer see all transactions; kasir sees only their own
-    if is_vendor(user_id):
+    # Owner sees all transactions; kasir sees only their own
+    if is_owner(user_id):
         transactions, total = get_transaction_history(limit=10)
         title = f"📜 *Riwayat Transaksi* (semua — {total} total)"
     else:

@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>POS Dashboard</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0f0f14;
+      --surface:   #1a1a24;
+      --surface2:  #22222f;
+      --border:    rgba(255,255,255,0.07);
+      --accent:    #6c63ff;
+      --accent2:   #a78bfa;
+      --green:     #22c55e;
+      --red:       #ef4444;
+      --gold:      #f59e0b;
+      --text:      #f1f5f9;
+      --text2:     #94a3b8;
+      --radius:    16px;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── Header ── */
+    .header {
+      background: linear-gradient(135deg, var(--accent) 0%, #8b5cf6 100%);
+      padding: 20px 16px 32px;
+      position: relative;
+      overflow: hidden;
+    }
+    .header::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: radial-gradient(circle at 80% 20%, rgba(255,255,255,.12) 0%, transparent 60%);
+    }
+    .header-top {
+      display: flex; align-items: center; justify-content: space-between;
+      position: relative;
+    }
+    .store-badge {
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: .08em; opacity: .85; background: rgba(255,255,255,.15);
+      padding: 4px 10px; border-radius: 20px;
+    }
+    .role-badge {
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: .06em; background: rgba(255,255,255,.2);
+      padding: 4px 10px; border-radius: 20px;
+    }
+    .header-name {
+      font-size: 22px; font-weight: 800; margin-top: 14px;
+      position: relative;
+    }
+    .header-sub {
+      font-size: 13px; opacity: .75; margin-top: 4px; position: relative;
+    }
+
+    /* ── Tabs ── */
+    .tabs {
+      display: flex; background: var(--surface);
+      border-bottom: 1px solid var(--border); overflow-x: auto;
+    }
+    .tab {
+      flex: 1; padding: 13px 8px; text-align: center;
+      font-size: 12px; font-weight: 600; color: var(--text2);
+      cursor: pointer; border: none; background: none;
+      border-bottom: 2px solid transparent; transition: all .2s;
+      white-space: nowrap; min-width: 80px;
+    }
+    .tab.active { color: var(--accent2); border-bottom-color: var(--accent2); }
+
+    /* ── Content ── */
+    .content { padding: 16px; }
+    .section { display: none; }
+    .section.active { display: block; }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 16px; margin-bottom: 12px;
+    }
+    .card-label {
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: .08em; color: var(--text2); margin-bottom: 8px;
+    }
+    .card-value {
+      font-size: 28px; font-weight: 800; color: var(--text);
+    }
+    .card-value.green { color: var(--green); }
+    .card-value.gold  { color: var(--gold); }
+
+    .stat-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+    }
+    .stat-card {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 12px; padding: 14px;
+    }
+    .stat-icon { font-size: 22px; margin-bottom: 8px; }
+    .stat-label { font-size: 11px; color: var(--text2); font-weight: 500; }
+    .stat-val { font-size: 18px; font-weight: 700; margin-top: 2px; }
+
+    /* ── Payment Breakdown ── */
+    .payment-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 10px 0; border-bottom: 1px solid var(--border);
+    }
+    .payment-row:last-child { border-bottom: none; }
+    .payment-method { font-size: 13px; font-weight: 500; }
+    .payment-info { text-align: right; }
+    .payment-count { font-size: 11px; color: var(--text2); }
+    .payment-amount { font-size: 14px; font-weight: 700; color: var(--green); }
+
+    /* ── Kasir List ── */
+    .kasir-card {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 12px; padding: 14px; margin-bottom: 10px;
+      display: flex; align-items: center; gap: 12px;
+    }
+    .kasir-avatar {
+      width: 44px; height: 44px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; font-weight: 700; flex-shrink: 0;
+    }
+    .kasir-info { flex: 1; }
+    .kasir-name { font-size: 14px; font-weight: 600; }
+    .kasir-username { font-size: 12px; color: var(--text2); margin-top: 2px; }
+    .kasir-joined { font-size: 11px; color: var(--text2); margin-top: 4px; }
+    .kasir-del { background: rgba(239,68,68,.15); border: 1px solid rgba(239,68,68,.3);
+      color: var(--red); border-radius: 8px; padding: 6px 12px;
+      font-size: 12px; font-weight: 600; cursor: pointer; transition: all .2s; }
+    .kasir-del:hover { background: rgba(239,68,68,.25); }
+
+    /* ── Generate Token ── */
+    .btn-primary {
+      width: 100%; padding: 14px; border-radius: 12px; border: none;
+      background: linear-gradient(135deg, var(--accent), #8b5cf6);
+      color: white; font-size: 15px; font-weight: 700; cursor: pointer;
+      transition: all .2s; display: flex; align-items: center;
+      justify-content: center; gap: 8px;
+    }
+    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(108,99,255,.4); }
+    .btn-primary:active { transform: translateY(0); }
+
+    .token-box {
+      background: var(--surface2); border: 1px solid var(--accent);
+      border-radius: 12px; padding: 16px; margin-top: 14px;
+      display: none;
+    }
+    .token-box.show { display: block; }
+    .token-label { font-size: 11px; color: var(--text2); font-weight: 600; margin-bottom: 8px; }
+    .token-code {
+      font-family: 'Courier New', monospace; font-size: 20px; font-weight: 700;
+      color: var(--accent2); letter-spacing: .06em; word-break: break-all;
+    }
+    .token-expires { font-size: 11px; color: var(--text2); margin-top: 8px; }
+    .btn-copy {
+      width: 100%; margin-top: 12px; padding: 10px; border-radius: 8px;
+      border: 1px solid var(--accent); color: var(--accent2);
+      background: transparent; font-size: 13px; font-weight: 600;
+      cursor: pointer; transition: all .2s;
+    }
+    .btn-copy:hover { background: rgba(108,99,255,.15); }
+
+    /* ── Transactions ── */
+    .trx-row {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 12px; padding: 12px 14px; margin-bottom: 8px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .trx-inv { font-size: 13px; font-weight: 600; }
+    .trx-method { font-size: 11px; color: var(--text2); margin-top: 2px; }
+    .trx-time { font-size: 11px; color: var(--text2); margin-top: 2px; }
+    .trx-amount { font-size: 15px; font-weight: 700; color: var(--green); }
+
+    /* ── Loading / Empty ── */
+    .loading, .empty {
+      text-align: center; padding: 40px 20px; color: var(--text2);
+    }
+    .loading-spinner {
+      width: 32px; height: 32px; border: 3px solid var(--border);
+      border-top-color: var(--accent); border-radius: 50%;
+      animation: spin .8s linear infinite; margin: 0 auto 12px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      background: var(--surface); border: 1px solid var(--border);
+      color: var(--text); padding: 10px 20px; border-radius: 20px;
+      font-size: 13px; font-weight: 600; box-shadow: 0 4px 20px rgba(0,0,0,.4);
+      opacity: 0; transition: opacity .3s; pointer-events: none; white-space: nowrap;
+      z-index: 999;
+    }
+    .toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-top">
+      <span class="store-badge" id="store-badge">🏪 Memuat...</span>
+      <span class="role-badge" id="role-badge">—</span>
+    </div>
+    <div class="header-name" id="header-name">Halo! 👋</div>
+    <div class="header-sub" id="header-sub">Dashboard POS</div>
+  </div>
+
+  <div class="tabs" id="tabs">
+    <button class="tab active" data-tab="dashboard">📊 Ringkasan</button>
+    <button class="tab owner-only" data-tab="kasir" style="display:none">👥 Kasir</button>
+    <button class="tab owner-only" data-tab="token" style="display:none">🔑 Token</button>
+    <button class="tab" data-tab="transaksi">🧾 Transaksi</button>
+  </div>
+
+  <div class="content">
+    <!-- Dashboard Tab -->
+    <div class="section active" id="tab-dashboard">
+      <div id="dashboard-loading" class="loading">
+        <div class="loading-spinner"></div>
+        <div>Memuat data...</div>
+      </div>
+      <div id="dashboard-content" style="display:none">
+        <div class="card">
+          <div class="card-label">💰 Total Pendapatan Hari Ini</div>
+          <div class="card-value green" id="today-revenue">Rp0</div>
+        </div>
+        <div class="stat-grid">
+          <div class="stat-card">
+            <div class="stat-icon">🧾</div>
+            <div class="stat-label">Transaksi</div>
+            <div class="stat-val" id="today-count">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">🏷️</div>
+            <div class="stat-label">Total Diskon</div>
+            <div class="stat-val" id="today-discount">Rp0</div>
+          </div>
+        </div>
+        <div class="card" id="month-card" style="display:none; margin-top:12px">
+          <div class="card-label">📅 Pendapatan Bulan Ini</div>
+          <div class="card-value gold" id="month-revenue">Rp0</div>
+        </div>
+        <div class="card" style="margin-top:12px" id="payment-section">
+          <div class="card-label">💳 Metode Pembayaran</div>
+          <div id="payment-breakdown"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Kasir Tab (owner only) -->
+    <div class="section" id="tab-kasir">
+      <div id="kasir-loading" class="loading">
+        <div class="loading-spinner"></div>
+        <div>Memuat daftar kasir...</div>
+      </div>
+      <div id="kasir-list"></div>
+    </div>
+
+    <!-- Token Tab (owner only) -->
+    <div class="section" id="tab-token">
+      <div class="card">
+        <div class="card-label">🔑 Generate Token Kasir</div>
+        <p style="font-size:13px; color:var(--text2); margin-bottom:14px;">
+          Buat token undangan untuk kasir baru. Token berlaku 48 jam dan hanya bisa dipakai sekali.
+        </p>
+        <button class="btn-primary" id="btn-gen-token">
+          <span>⚡ Generate Token Baru</span>
+        </button>
+        <div class="token-box" id="token-box">
+          <div class="token-label">Token Kasir:</div>
+          <div class="token-code" id="token-code">—</div>
+          <div class="token-expires" id="token-expires"></div>
+          <button class="btn-copy" id="btn-copy-token">📋 Salin Token</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Transaksi Tab -->
+    <div class="section" id="tab-transaksi">
+      <div id="trx-loading" class="loading">
+        <div class="loading-spinner"></div>
+        <div>Memuat transaksi...</div>
+      </div>
+      <div id="trx-list"></div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    // ── Init Telegram Web App ──────────────────────────────────────────────
+    const tg = window.Telegram.WebApp;
+    tg.ready();
+    tg.expand();
+    tg.setHeaderColor('#0f0f14');
+    tg.setBackgroundColor('#0f0f14');
+
+    const initData = tg.initData;
+    // API base URL — injected at deploy time. Fallback for local testing.
+    const API_BASE = (window.API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '');
+
+    const headers = {
+      'Content-Type': 'application/json',
+      'X-Telegram-Init-Data': initData,
+    };
+
+    let currentRole = null;
+
+    // ── Helpers ───────────────────────────────────────────────────────────
+    function fmtRp(n) {
+      return 'Rp' + Number(n).toLocaleString('id-ID');
+    }
+
+    function fmtDate(iso) {
+      if (!iso) return '—';
+      const d = new Date(iso);
+      return d.toLocaleDateString('id-ID', { day:'2-digit', month:'short', year:'numeric' })
+        + ' ' + d.toLocaleTimeString('id-ID', { hour:'2-digit', minute:'2-digit' });
+    }
+
+    function showToast(msg, ms = 2000) {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.classList.add('show');
+      setTimeout(() => el.classList.remove('show'), ms);
+    }
+
+    // ── Tabs ─────────────────────────────────────────────────────────────
+    document.querySelectorAll('.tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+        if (btn.dataset.tab === 'kasir') loadKasir();
+        if (btn.dataset.tab === 'transaksi') loadTransaksi();
+      });
+    });
+
+    // ── Load Dashboard ────────────────────────────────────────────────────
+    async function loadDashboard() {
+      try {
+        const res = await fetch(API_BASE + '/api/mini/dashboard', { headers });
+        if (!res.ok) {
+          const err = await res.json();
+          document.getElementById('dashboard-loading').innerHTML =
+            `<div style="color:var(--red)">⚠️ ${err.detail || 'Gagal memuat data'}</div>`;
+          return;
+        }
+        const data = await res.json();
+        currentRole = data.role;
+
+        // Header
+        document.getElementById('store-badge').textContent = '🏪 ' + (data.store_name || 'Toko');
+        document.getElementById('role-badge').textContent =
+          data.role === 'owner' ? '👑 Owner' : '👤 Kasir';
+        document.getElementById('header-name').textContent =
+          'Halo, ' + (data.full_name || 'User') + '! 👋';
+        document.getElementById('header-sub').textContent =
+          data.role === 'owner' ? 'Panel Pemilik Toko' : 'Panel Kasir';
+
+        // Show owner-only tabs
+        if (data.role === 'owner') {
+          document.querySelectorAll('.owner-only').forEach(el => el.style.display = '');
+        }
+
+        // Stats
+        const t = data.today;
+        document.getElementById('today-revenue').textContent = fmtRp(t.total_revenue);
+        document.getElementById('today-count').textContent = t.total_transactions;
+        document.getElementById('today-discount').textContent = fmtRp(t.total_discount);
+
+        if (data.month_revenue !== null) {
+          document.getElementById('month-revenue').textContent = fmtRp(data.month_revenue);
+          document.getElementById('month-card').style.display = '';
+        }
+
+        // Payment breakdown
+        const pb = document.getElementById('payment-breakdown');
+        pb.innerHTML = '';
+        const breakdown = t.payment_breakdown || {};
+        if (Object.keys(breakdown).length === 0) {
+          pb.innerHTML = '<p style="color:var(--text2);font-size:13px">Belum ada transaksi hari ini.</p>';
+        } else {
+          for (const [method, info] of Object.entries(breakdown)) {
+            pb.innerHTML += `
+              <div class="payment-row">
+                <div class="payment-method">${method}</div>
+                <div class="payment-info">
+                  <div class="payment-count">${info.count} transaksi</div>
+                  <div class="payment-amount">${fmtRp(info.amount)}</div>
+                </div>
+              </div>`;
+          }
+        }
+
+        document.getElementById('dashboard-loading').style.display = 'none';
+        document.getElementById('dashboard-content').style.display = '';
+      } catch(e) {
+        document.getElementById('dashboard-loading').innerHTML =
+          `<div style="color:var(--red)">⚠️ Tidak dapat terhubung ke server.</div>`;
+      }
+    }
+
+    // ── Load Kasir List ───────────────────────────────────────────────────
+    async function loadKasir() {
+      const loading = document.getElementById('kasir-loading');
+      const list = document.getElementById('kasir-list');
+      loading.style.display = ''; list.innerHTML = '';
+      try {
+        const res = await fetch(API_BASE + '/api/mini/kasir-list', { headers });
+        const data = await res.json();
+        loading.style.display = 'none';
+        if (!data.kasir_list || data.kasir_list.length === 0) {
+          list.innerHTML = '<div class="empty">👥 Belum ada kasir terdaftar.</div>';
+          return;
+        }
+        data.kasir_list.forEach(k => {
+          const name = k.full_name || k.username || 'Kasir';
+          const initial = name[0].toUpperCase();
+          list.innerHTML += `
+            <div class="kasir-card">
+              <div class="kasir-avatar">${initial}</div>
+              <div class="kasir-info">
+                <div class="kasir-name">${name}</div>
+                <div class="kasir-username">${k.username ? '@' + k.username : '—'}</div>
+                <div class="kasir-joined">Bergabung: ${fmtDate(k.joined_at)}</div>
+              </div>
+              <button class="kasir-del" onclick="deactivateKasir(${k.telegram_id})">Hapus</button>
+            </div>`;
+        });
+      } catch(e) {
+        loading.innerHTML = '<div style="color:var(--red)">⚠️ Gagal memuat daftar kasir.</div>';
+      }
+    }
+
+    async function deactivateKasir(telegramId) {
+      if (!confirm('Yakin ingin nonaktifkan kasir ini?')) return;
+      try {
+        const res = await fetch(API_BASE + '/api/mini/kasir/' + telegramId, {
+          method: 'DELETE', headers
+        });
+        const data = await res.json();
+        showToast(data.message || '✅ Kasir dinonaktifkan');
+        loadKasir();
+      } catch(e) {
+        showToast('❌ Gagal menonaktifkan kasir');
+      }
+    }
+
+    // ── Generate Token ────────────────────────────────────────────────────
+    document.getElementById('btn-gen-token').addEventListener('click', async () => {
+      const btn = document.getElementById('btn-gen-token');
+      btn.disabled = true;
+      btn.innerHTML = '<span>⏳ Generating...</span>';
+      try {
+        const res = await fetch(API_BASE + '/api/mini/generate-kasir-token', {
+          method: 'POST', headers
+        });
+        const data = await res.json();
+        document.getElementById('token-code').textContent = data.token;
+        const exp = new Date(data.expires_at);
+        document.getElementById('token-expires').textContent =
+          '⏰ Berlaku hingga: ' + fmtDate(data.expires_at);
+        document.getElementById('token-box').classList.add('show');
+        showToast('✅ Token berhasil dibuat!');
+      } catch(e) {
+        showToast('❌ Gagal generate token');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<span>⚡ Generate Token Baru</span>';
+      }
+    });
+
+    document.getElementById('btn-copy-token').addEventListener('click', () => {
+      const token = document.getElementById('token-code').textContent;
+      navigator.clipboard.writeText(token).then(() => {
+        showToast('✅ Token disalin!');
+      });
+    });
+
+    // ── Load Transactions ─────────────────────────────────────────────────
+    async function loadTransaksi() {
+      const loading = document.getElementById('trx-loading');
+      const list = document.getElementById('trx-list');
+      loading.style.display = ''; list.innerHTML = '';
+      try {
+        const res = await fetch(API_BASE + '/api/mini/transactions?limit=30', { headers });
+        const data = await res.json();
+        loading.style.display = 'none';
+        if (!data.transactions || data.transactions.length === 0) {
+          list.innerHTML = '<div class="empty">🧾 Belum ada transaksi.</div>';
+          return;
+        }
+        data.transactions.forEach(t => {
+          list.innerHTML += `
+            <div class="trx-row">
+              <div>
+                <div class="trx-inv">${t.invoice_no}</div>
+                <div class="trx-method">${t.payment_method || '—'}</div>
+                <div class="trx-time">${fmtDate(t.created_at)}</div>
+              </div>
+              <div class="trx-amount">${fmtRp(t.grand_total)}</div>
+            </div>`;
+        });
+      } catch(e) {
+        loading.innerHTML = '<div style="color:var(--red)">⚠️ Gagal memuat transaksi.</div>';
+      }
+    }
+
+    // ── Init ──────────────────────────────────────────────────────────────
+    loadDashboard();
+  </script>
+</body>
+</html>

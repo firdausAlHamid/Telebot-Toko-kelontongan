@@ -4,7 +4,7 @@ from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, I
 from sqlalchemy import func
 from database import SessionLocal, CartItem, Product, Transaction, TransactionItem
 from receipt_generator import generate_receipt_image
-from config import BOT_TOKEN, WHATSAPP_NUMBER, DEVELOPER_TELEGRAM_ID
+from config import BOT_TOKEN, WHATSAPP_NUMBER, OWNER_TELEGRAM_ID
 from promotion_service import get_active_promos_for_products, calculate_cart_with_discounts, get_recommendations
 from admin_handlers import get_admin_conv_handler
 from admin_schedule_handlers import get_admin_schedule_handler
@@ -14,9 +14,11 @@ from admin_report_handlers import (
 )
 from schedule_service import get_today_schedule_status, get_upcoming_schedules_receipt
 from voice_ai_handler import handle_voice, handle_voice_callback, handle_voice_text_correction
-from dev_handlers import get_dev_handler
-from vendor_handlers import get_vendor_handler
-from auth import bootstrap_developer, sync_user_info
+from owner_handlers import get_owner_handler
+from auth import (
+    sync_user_info, is_registered, is_kasir as auth_is_kasir,
+    is_owner as auth_is_owner, validate_and_activate_token
+)
 import math
 import datetime
 import os
@@ -428,40 +430,89 @@ def build_products_keyboard(category_prefix, page=1):
 
 # --- Handler Functions ---
 
+def _build_main_menu_keyboard():
+    """Build the main menu reply keyboard for registered users."""
+    return ReplyKeyboardMarkup(
+        [[KeyboardButton("🛒 Mulai Transaksi")]],
+        resize_keyboard=True
+    )
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handler for /start command."""
-    # Pre-load cart and cache on start
-    user_id = update.effective_user.id
+    """
+    Handler for /start command.
+
+    Flow:
+    - If NOT registered: show onboarding + ask for token
+    - If registered (kasir): show POS menu
+    - If registered (owner): show owner welcome + /panel hint
+    """
+    tg_user = update.effective_user
+    user_id = tg_user.id
+
+    # Keep username/full_name up-to-date for registered users
+    sync_user_info(user_id, tg_user.username, tg_user.full_name)
+
+    if not is_registered(user_id):
+        # Unregistered — show onboarding instructions
+        try:
+            from config import API_BASE_URL
+            web_url = API_BASE_URL.rstrip('/') + '/website/'
+        except Exception:
+            web_url = 'https://pos.yourdomain.com/register'
+
+        await update.message.reply_text(
+            f"👋 Halo, *{tg_user.first_name}*!\n\n"
+            f"Selamat datang di *Bot POS Toko* 🏪\n\n"
+            f"Kamu belum terdaftar. Untuk mulai:\n\n"
+            f"*Jika kamu Pemilik Toko (Owner):*\n"
+            f"1\. Buka website pendaftaran\n"
+            f"2\. Daftarkan toko kamu → dapat token\n"
+            f"3\. Paste token di sini\n\n"
+            f"*Jika kamu Kasir:*\n"
+            f"1\. Minta token dari pemilik toko kamu\n"
+            f"2\. Paste token di sini\n\n"
+            f"🔑 *Sudah punya token? Ketik token kamu sekarang\.*",
+            parse_mode="MarkdownV2",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return
+
+    # Registered — pre-load cart and show menu
     _refresh_cache_if_needed()
     load_db_cart_to_memory(user_id, context)
 
-    # Keep username/full_name up-to-date for registered users
-    tg_user = update.effective_user
-    sync_user_info(tg_user.id, tg_user.username, tg_user.full_name)
-
-    reply_markup = ReplyKeyboardMarkup(
-        START_KEYBOARD,
-        resize_keyboard=True,
-        one_time_keyboard=True
-    )
-    await update.message.reply_text(
-        "Halo! Selamat datang di Toko Kelontong 🏪\nTekan tombol di bawah untuk mulai.",
-        reply_markup=reply_markup
-    )
+    if auth_is_owner(user_id):
+        from auth import get_store_name
+        store_name = get_store_name(user_id) or "Toko Kamu"
+        await update.message.reply_text(
+            f"👋 Halo, *{tg_user.first_name}*!\n"
+            f"🏪 Toko: *{store_name}*\n\n"
+            f"Gunakan /panel untuk kelola kasir & buka dashboard.",
+            parse_mode="Markdown",
+            reply_markup=_build_main_menu_keyboard()
+        )
+    else:
+        # Kasir
+        text = build_cart_text_from_memory(
+            context, f"👋 Halo, *{tg_user.first_name}*! 🏪\n\n🛒 *Katalog Produk*\n\nSilakan pilih kategori:")
+        reply_markup = build_categories_keyboard()
+        await update.message.reply_text(text, reply_markup=ReplyKeyboardRemove(), parse_mode="Markdown")
+        await update.message.reply_text(
+            "Pilih kategori produk:",
+            reply_markup=reply_markup
+        )
 
 
 async def handler_mulai(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handler for the 'Mulai' button — goes directly to catalog."""
+    """Handler for the '🛒 Mulai Transaksi' button — opens catalog."""
     user_id = update.effective_user.id
+
+    if not auth_is_kasir(user_id):
+        await update.message.reply_text("⛔ Kamu belum terdaftar. Kirim /start untuk instruksi pendaftaran.")
+        return
+
     ensure_cart_loaded(user_id, context)
-
-    # Remove the reply keyboard
-    await update.message.reply_text(
-        "Selamat datang di Toko Kelontong! 🏪",
-        reply_markup=ReplyKeyboardRemove()
-    )
-
-    # Show catalog directly
     text = build_cart_text_from_memory(
         context, "🏪 *Katalog Produk*\n\nSilakan pilih kategori:")
     reply_markup = build_categories_keyboard()
@@ -904,13 +955,46 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Catch-all for text messages. Routes to voice correction if active."""
-    # Check if admin is in voice correction mode
+    """
+    Catch-all for text messages.
+    - Routes token input (POS-OWNER-xxxx / POS-KASIR-xxxx) to auth flow
+    - Routes voice correction mode
+    - Otherwise: prompt to use menus
+    """
+    text = (update.message.text or "").strip()
+    tg_user = update.effective_user
+
+    # ── Token activation flow ─────────────────────────────────────────────
+    if text.upper().startswith("POS-"):
+        await update.message.reply_text("⏳ Memvalidasi token...")
+        success, msg = validate_and_activate_token(
+            telegram_id=tg_user.id,
+            token_str=text,
+            username=tg_user.username,
+            full_name=tg_user.full_name,
+        )
+        if success:
+            await update.message.reply_text(msg, parse_mode="Markdown")
+            # Re-send /start to show the proper menu
+            await start(update, context)
+        else:
+            await update.message.reply_text(msg, parse_mode="Markdown")
+        return
+
+    # ── Voice correction mode ─────────────────────────────────────────────
     if context.user_data.get("voice_correction_mode"):
         handled = await handle_voice_text_correction(update, context)
         if handled:
             return
-    await update.message.reply_text("Silakan gunakan tombol menu di bawah.")
+
+    # ── Fallback ──────────────────────────────────────────────────────────
+    if not is_registered(tg_user.id):
+        await update.message.reply_text(
+            "Kamu belum terdaftar. Kirim /start untuk instruksi pendaftaran, "
+            "atau langsung paste token kamu di sini."
+        )
+    else:
+        await update.message.reply_text("Silakan gunakan tombol menu di bawah.")
 
 
 async def handler_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -944,24 +1028,16 @@ async def handler_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def post_init(application):
-    """Register bot commands and bootstrap the developer on startup."""
-    # Bootstrap developer account in DB (safe to call every start)
-    bootstrap_developer(
-        telegram_id=DEVELOPER_TELEGRAM_ID,
-        username="merkava1945",
-        full_name="Admiral Kuznetsov"
-    )
-
+    """Register bot commands on startup."""
     commands = [
-        BotCommand("start",   "🚀 Mulai bot"),
+        BotCommand("start",   "🚀 Mulai / cek status akun"),
         BotCommand("help",    "📖 Panduan penggunaan"),
+        BotCommand("panel",   "🏤 Panel owner (pemilik toko)"),
         BotCommand("riwayat", "📜 Riwayat transaksi"),
-        BotCommand("laporan", "📊 Laporan penjualan (kasir/vendor)"),
-        BotCommand("void",    "❌ Void transaksi (kasir/vendor)"),
-        BotCommand("promo",   "🏷️ Kelola promosi (kasir/vendor)"),
-        BotCommand("jadwal",  "🗓️ Kelola jadwal toko (kasir/vendor)"),
-        BotCommand("panel",   "🏤 Panel vendor (pemilik toko)"),
-        BotCommand("dev",     "👨‍💻 Panel developer (sistem)"),
+        BotCommand("laporan", "📊 Laporan penjualan (owner)"),
+        BotCommand("void",    "❌ Void transaksi (owner)"),
+        BotCommand("promo",   "🏷️ Kelola promosi (owner)"),
+        BotCommand("jadwal",  "🗓️ Kelola jadwal toko (owner)"),
         BotCommand("cancel",  "❌ Batalkan operasi"),
     ]
     await application.bot.set_my_commands(commands)
@@ -981,12 +1057,11 @@ if __name__ == "__main__":
     )
 
     # ConversationHandlers — order matters: more specific first
-    app.add_handler(get_dev_handler())           # /dev    — Developer panel (TOTP)
-    app.add_handler(get_vendor_handler())        # /panel  — Vendor panel
-    app.add_handler(get_admin_conv_handler())    # /promo  — Promotions CRUD
+    app.add_handler(get_owner_handler())          # /panel  — Owner panel
+    app.add_handler(get_admin_conv_handler())     # /promo  — Promotions CRUD
     app.add_handler(get_admin_schedule_handler()) # /jadwal — Schedule CRUD
-    app.add_handler(get_report_conv_handler())   # /laporan — Sales reports
-    app.add_handler(get_void_conv_handler())     # /void   — Void transaction
+    app.add_handler(get_report_conv_handler())    # /laporan — Sales reports
+    app.add_handler(get_void_conv_handler())      # /void   — Void transaction
 
     app.add_handler(CommandHandler("start",    start))
     app.add_handler(CommandHandler("help",     handler_help))
@@ -998,12 +1073,13 @@ if __name__ == "__main__":
     app.add_handler(CallbackQueryHandler(handle_trx_detail_callback, pattern="^trx_detail_"))
     app.add_handler(CallbackQueryHandler(button_click))
 
-    app.add_handler(MessageHandler(filters.Regex("^🚀 Mulai$"), handler_mulai))
+    # Main menu button handler
+    app.add_handler(MessageHandler(filters.Regex("^🛒 Mulai Transaksi$"), handler_mulai))
 
-    # Voice note handler — AI-powered CRUD via voice commands (admin only)
+    # Voice note handler — AI-powered CRUD via voice commands (owner only)
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
 
-    # Text catch-all (also handles voice text correction mode)
+    # Text catch-all: handles token activation + voice correction + fallback
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
 
     print("Bot is running...")
