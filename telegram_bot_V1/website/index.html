@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Daftar Toko — POS Bot Telegram</title>
+  <meta name="description" content="Daftarkan toko kamu dan dapatkan akses ke POS Bot Telegram. Kelola transaksi dengan mudah." />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0c0c14;
+      --surface:  #14141f;
+      --surface2: #1e1e2e;
+      --border:   rgba(255,255,255,0.08);
+      --accent:   #6c63ff;
+      --accent2:  #a78bfa;
+      --green:    #22c55e;
+      --red:      #ef4444;
+      --text:     #f1f5f9;
+      --text2:    #94a3b8;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex; flex-direction: column;
+    }
+
+    /* ── Hero ── */
+    .hero {
+      background: linear-gradient(135deg, #1a1030 0%, #0c0c20 50%, #101020 100%);
+      padding: 60px 20px 80px;
+      text-align: center;
+      position: relative; overflow: hidden;
+    }
+    .hero::before {
+      content: '';
+      position: absolute; top: -40%; left: 50%; transform: translateX(-50%);
+      width: 600px; height: 600px; border-radius: 50%;
+      background: radial-gradient(circle, rgba(108,99,255,0.2) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .logo { font-size: 40px; margin-bottom: 16px; }
+    .hero h1 {
+      font-size: clamp(28px, 6vw, 48px); font-weight: 900; line-height: 1.15;
+      background: linear-gradient(135deg, #fff 30%, var(--accent2) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text; margin-bottom: 16px;
+    }
+    .hero p {
+      font-size: 16px; color: var(--text2); max-width: 480px;
+      margin: 0 auto 32px; line-height: 1.6;
+    }
+    .badge-row {
+      display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;
+    }
+    .badge {
+      background: rgba(255,255,255,.07); border: 1px solid var(--border);
+      border-radius: 20px; padding: 6px 14px;
+      font-size: 13px; font-weight: 500; color: var(--text2);
+    }
+
+    /* ── Main ── */
+    main {
+      flex: 1; display: flex; align-items: flex-start; justify-content: center;
+      padding: 0 16px 60px; margin-top: -40px;
+    }
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 24px; padding: 32px; width: 100%; max-width: 480px;
+      box-shadow: 0 20px 60px rgba(0,0,0,.5);
+    }
+    .card-title {
+      font-size: 20px; font-weight: 800; margin-bottom: 6px;
+    }
+    .card-sub {
+      font-size: 13px; color: var(--text2); margin-bottom: 28px; line-height: 1.5;
+    }
+
+    /* ── Form ── */
+    .form-group { margin-bottom: 18px; }
+    label {
+      display: block; font-size: 13px; font-weight: 600;
+      color: var(--text2); margin-bottom: 8px; letter-spacing: .03em;
+    }
+    input {
+      width: 100%; padding: 12px 16px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 12px; color: var(--text); font-size: 15px;
+      font-family: inherit; transition: all .2s;
+      outline: none;
+    }
+    input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(108,99,255,.2); }
+    input::placeholder { color: var(--text2); }
+    .input-prefix {
+      position: relative;
+    }
+    .input-prefix input { padding-left: 36px; }
+    .prefix-icon {
+      position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+      color: var(--text2); font-size: 15px; pointer-events: none;
+    }
+
+    .btn {
+      width: 100%; padding: 14px;
+      background: linear-gradient(135deg, var(--accent), #8b5cf6);
+      color: white; font-size: 16px; font-weight: 700;
+      border: none; border-radius: 12px; cursor: pointer;
+      transition: all .25s; display: flex; align-items: center;
+      justify-content: center; gap: 8px;
+    }
+    .btn:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(108,99,255,.4); }
+    .btn:active { transform: translateY(0); }
+    .btn:disabled { opacity: .5; cursor: not-allowed; transform: none; box-shadow: none; }
+
+    /* ── Result ── */
+    .result { display: none; }
+    .result.show { display: block; }
+    .result-header {
+      display: flex; align-items: center; gap: 10px;
+      padding: 14px; background: rgba(34,197,94,.1);
+      border: 1px solid rgba(34,197,94,.3); border-radius: 12px;
+      margin-bottom: 20px;
+    }
+    .result-icon { font-size: 24px; }
+    .result-title { font-size: 15px; font-weight: 700; color: var(--green); }
+    .result-sub { font-size: 12px; color: var(--text2); margin-top: 2px; }
+
+    .token-block {
+      background: var(--surface2); border: 1px solid var(--accent);
+      border-radius: 12px; padding: 20px; text-align: center; margin-bottom: 20px;
+    }
+    .token-label-sm { font-size: 11px; color: var(--text2); font-weight: 600; margin-bottom: 10px; }
+    .token-value {
+      font-family: 'Courier New', monospace;
+      font-size: 22px; font-weight: 700; color: var(--accent2);
+      letter-spacing: .08em; word-break: break-all;
+    }
+    .token-expiry { font-size: 12px; color: var(--text2); margin-top: 8px; }
+
+    .btn-copy {
+      width: 100%; margin-bottom: 12px; padding: 12px;
+      background: transparent; border: 1px solid var(--accent);
+      color: var(--accent2); border-radius: 10px; font-size: 14px;
+      font-weight: 600; cursor: pointer; transition: all .2s;
+    }
+    .btn-copy:hover { background: rgba(108,99,255,.15); }
+
+    .steps { margin-top: 20px; }
+    .step { display: flex; gap: 12px; margin-bottom: 14px; }
+    .step-num {
+      width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+      background: linear-gradient(135deg, var(--accent), #8b5cf6);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 700;
+    }
+    .step-text { font-size: 13px; color: var(--text2); line-height: 1.5; padding-top: 4px; }
+    .step-text b { color: var(--text); }
+
+    .divider { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
+
+    /* ── Error ── */
+    .error-msg {
+      background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.3);
+      border-radius: 10px; padding: 12px 16px;
+      font-size: 13px; color: var(--red); margin-bottom: 16px;
+      display: none;
+    }
+    .error-msg.show { display: block; }
+
+    /* ── Footer ── */
+    footer {
+      text-align: center; padding: 20px;
+      font-size: 12px; color: var(--text2); opacity: .5;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="hero">
+    <div class="logo">🏪</div>
+    <h1>Daftarkan Toko Kamu</h1>
+    <p>Sistem POS berbasis Telegram. Input transaksi lewat bot, pantau penjualan lewat dashboard.</p>
+    <div class="badge-row">
+      <span class="badge">⚡ Real-time</span>
+      <span class="badge">📊 Dashboard Mini App</span>
+      <span class="badge">🔒 Aman</span>
+    </div>
+  </div>
+
+  <main>
+    <div class="card">
+      <!-- Registration Form -->
+      <div id="form-section">
+        <div class="card-title">📝 Registrasi Owner</div>
+        <div class="card-sub">
+          Isi form di bawah. Kamu akan mendapat token untuk mengaktifkan akun di Telegram bot.
+        </div>
+
+        <div class="error-msg" id="error-msg"></div>
+
+        <form id="reg-form" onsubmit="submitForm(event)">
+          <div class="form-group">
+            <label for="store-name">Nama Toko</label>
+            <input
+              id="store-name" type="text" name="store_name"
+              placeholder="contoh: Toko Budi Jaya" required autocomplete="off"
+            />
+          </div>
+          <div class="form-group">
+            <label for="tg-username">Username Telegram</label>
+            <div class="input-prefix">
+              <span class="prefix-icon">@</span>
+              <input
+                id="tg-username" type="text" name="telegram_username"
+                placeholder="username_telegram" required autocomplete="off"
+              />
+            </div>
+          </div>
+          <button class="btn" type="submit" id="submit-btn">
+            <span>🚀 Daftar &amp; Dapat Token</span>
+          </button>
+        </form>
+      </div>
+
+      <!-- Result Section -->
+      <div class="result" id="result-section">
+        <div class="result-header">
+          <div class="result-icon">✅</div>
+          <div>
+            <div class="result-title">Toko berhasil didaftarkan!</div>
+            <div class="result-sub">Salin token di bawah dan aktifkan di bot Telegram</div>
+          </div>
+        </div>
+
+        <div class="token-block">
+          <div class="token-label-sm">TOKEN AKTIVASI KAMU:</div>
+          <div class="token-value" id="result-token">—</div>
+          <div class="token-expiry" id="result-expiry"></div>
+        </div>
+
+        <button class="btn-copy" id="btn-copy">📋 Salin Token</button>
+
+        <hr class="divider" />
+
+        <div class="card-title" style="font-size:16px; margin-bottom:12px">🤖 Cara Aktivasi di Bot</div>
+        <div class="steps">
+          <div class="step">
+            <div class="step-num">1</div>
+            <div class="step-text">Buka <b>Telegram</b> dan cari bot POS kamu</div>
+          </div>
+          <div class="step">
+            <div class="step-num">2</div>
+            <div class="step-text">Kirim perintah <b>/start</b></div>
+          </div>
+          <div class="step">
+            <div class="step-num">3</div>
+            <div class="step-text"><b>Paste token</b> yang kamu salin tadi dan kirim</div>
+          </div>
+          <div class="step">
+            <div class="step-num">4</div>
+            <div class="step-text">Akun owner kamu langsung aktif! 🎉</div>
+          </div>
+        </div>
+
+        <hr class="divider" />
+        <button class="btn" onclick="resetForm()">➕ Daftarkan Toko Lain</button>
+      </div>
+    </div>
+  </main>
+
+  <footer>© 2025 POS Bot Telegram — Sistem kasir modern berbasis Telegram</footer>
+
+  <script>
+    // API base URL — replace with your actual deployed API URL
+    const API_BASE = (window.API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '');
+    // API Secret — should be injected at deploy time (NOT hardcoded in production)
+    const API_SECRET = window.API_SECRET_KEY || '';
+
+    async function submitForm(e) {
+      e.preventDefault();
+      const btn = document.getElementById('submit-btn');
+      const errEl = document.getElementById('error-msg');
+      errEl.classList.remove('show');
+
+      const storeName = document.getElementById('store-name').value.trim();
+      const tgUsername = document.getElementById('tg-username').value.trim().replace(/^@/, '');
+
+      if (!storeName || !tgUsername) return;
+
+      btn.disabled = true;
+      btn.innerHTML = '<span>⏳ Mendaftarkan...</span>';
+
+      try {
+        const res = await fetch(API_BASE + '/api/web/register-owner', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Api-Secret': API_SECRET,
+          },
+          body: JSON.stringify({ store_name: storeName, telegram_username: tgUsername }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          errEl.textContent = '❌ ' + (data.detail || 'Terjadi kesalahan.');
+          errEl.classList.add('show');
+          btn.disabled = false;
+          btn.innerHTML = '<span>🚀 Daftar & Dapat Token</span>';
+          return;
+        }
+
+        // Show result
+        document.getElementById('result-token').textContent = data.token;
+        const expDate = new Date(data.expires_at);
+        document.getElementById('result-expiry').textContent =
+          '⏰ Berlaku hingga: ' + expDate.toLocaleString('id-ID');
+
+        document.getElementById('form-section').style.display = 'none';
+        document.getElementById('result-section').classList.add('show');
+
+      } catch(err) {
+        errEl.textContent = '❌ Tidak dapat terhubung ke server. Coba lagi nanti.';
+        errEl.classList.add('show');
+        btn.disabled = false;
+        btn.innerHTML = '<span>🚀 Daftar & Dapat Token</span>';
+      }
+    }
+
+    document.getElementById('btn-copy').addEventListener('click', () => {
+      const token = document.getElementById('result-token').textContent;
+      navigator.clipboard.writeText(token).then(() => {
+        const btn = document.getElementById('btn-copy');
+        btn.textContent = '✅ Token Disalin!';
+        setTimeout(() => { btn.textContent = '📋 Salin Token'; }, 2000);
+      });
+    });
+
+    function resetForm() {
+      document.getElementById('form-section').style.display = '';
+      document.getElementById('result-section').classList.remove('show');
+      document.getElementById('reg-form').reset();
+      const btn = document.getElementById('submit-btn');
+      btn.disabled = false;
+      btn.innerHTML = '<span>🚀 Daftar & Dapat Token</span>';
+    }
+  </script>
+</body>
+</html>
