@@ -1,8 +1,19 @@
+# === Force IPv4 DNS resolution (fixes intermittent IPv6 failures) ===
+import socket
+_original_getaddrinfo = socket.getaddrinfo
+def _ipv4_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    """Force IPv4 for api.telegram.org to avoid IPv6 DNS/TLS issues."""
+    if host and 'telegram' in str(host).lower():
+        family = socket.AF_INET
+    return _original_getaddrinfo(host, port, family, type, proto, flags)
+socket.getaddrinfo = _ipv4_getaddrinfo
+# ====================================================================
+
 from telegram import Update, BotCommand
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters, CallbackQueryHandler
-from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, MenuButtonWebApp, WebAppInfo
 from sqlalchemy import func
-from database import SessionLocal, CartItem, Product, Transaction, TransactionItem
+from database import SessionLocal, CartItem, Product, Transaction, TransactionItem, StockMovement
 from receipt_generator import generate_receipt_image
 from config import BOT_TOKEN, WHATSAPP_NUMBER, OWNER_TELEGRAM_ID
 from promotion_service import get_active_promos_for_products, calculate_cart_with_discounts, get_recommendations
@@ -15,9 +26,10 @@ from admin_report_handlers import (
 from schedule_service import get_today_schedule_status, get_upcoming_schedules_receipt
 from voice_ai_handler import handle_voice, handle_voice_callback, handle_voice_text_correction
 from owner_handlers import get_owner_handler
+from stock_handlers import get_stock_handler
 from auth import (
     sync_user_info, is_registered, is_kasir as auth_is_kasir,
-    is_owner as auth_is_owner, validate_and_activate_token
+    is_owner as auth_is_owner, validate_and_activate_token, get_tenant_id
 )
 import math
 import datetime
@@ -430,12 +442,23 @@ def build_products_keyboard(category_prefix, page=1):
 
 # --- Handler Functions ---
 
-def _build_main_menu_keyboard():
-    """Build the main menu reply keyboard for registered users."""
-    return ReplyKeyboardMarkup(
-        [[KeyboardButton("🛒 Mulai Transaksi")]],
-        resize_keyboard=True
-    )
+def _build_main_menu_keyboard(is_owner_user=False):
+    """Build the main menu inline keyboard."""
+    kb = [
+        [InlineKeyboardButton("🛒 Mulai Transaksi", callback_data="main_transaksi")],
+        [InlineKeyboardButton("📦 Stok Barang", callback_data="stk_menu"), 
+         InlineKeyboardButton("📊 Laporan", callback_data="main_laporan")],
+    ]
+    if is_owner_user:
+        kb.append([
+            InlineKeyboardButton("🏷️ Promo", callback_data="main_promo"), 
+            InlineKeyboardButton("🗓️ Jadwal", callback_data="main_jadwal")
+        ])
+        kb.append([
+            InlineKeyboardButton("⚙️ Panel Owner", callback_data="main_panel"), 
+            # We can use web_app for dashboard later
+        ])
+    return InlineKeyboardMarkup(kb)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -466,14 +489,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Selamat datang di *Bot POS Toko* 🏪\n\n"
             f"Kamu belum terdaftar. Untuk mulai:\n\n"
             f"*Jika kamu Pemilik Toko (Owner):*\n"
-            f"1\. Buka website pendaftaran\n"
-            f"2\. Daftarkan toko kamu → dapat token\n"
-            f"3\. Paste token di sini\n\n"
+            f"1. Buka website pendaftaran\n"
+            f"2. Daftarkan toko kamu → dapat token\n"
+            f"3. Paste token di sini\n\n"
             f"*Jika kamu Kasir:*\n"
-            f"1\. Minta token dari pemilik toko kamu\n"
-            f"2\. Paste token di sini\n\n"
-            f"🔑 *Sudah punya token? Ketik token kamu sekarang\.*",
-            parse_mode="MarkdownV2",
+            f"1. Minta token dari pemilik toko kamu\n"
+            f"2. Paste token di sini\n\n"
+            f"🔑 *Sudah punya token? Ketik token kamu sekarang.*",
+            parse_mode="Markdown",
             reply_markup=ReplyKeyboardRemove()
         )
         return
@@ -488,35 +511,42 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"👋 Halo, *{tg_user.first_name}*!\n"
             f"🏪 Toko: *{store_name}*\n\n"
-            f"Gunakan /panel untuk kelola kasir & buka dashboard.",
+            f"Pilih menu di bawah ini:",
             parse_mode="Markdown",
-            reply_markup=_build_main_menu_keyboard()
+            reply_markup=_build_main_menu_keyboard(is_owner_user=True)
         )
     else:
         # Kasir
-        text = build_cart_text_from_memory(
-            context, f"👋 Halo, *{tg_user.first_name}*! 🏪\n\n🛒 *Katalog Produk*\n\nSilakan pilih kategori:")
-        reply_markup = build_categories_keyboard()
-        await update.message.reply_text(text, reply_markup=ReplyKeyboardRemove(), parse_mode="Markdown")
         await update.message.reply_text(
-            "Pilih kategori produk:",
-            reply_markup=reply_markup
+            f"👋 Halo, *{tg_user.first_name}*! 🏪\n\n"
+            f"Pilih menu di bawah ini:",
+            parse_mode="Markdown",
+            reply_markup=_build_main_menu_keyboard(is_owner_user=False)
         )
 
 
-async def handler_mulai(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handler for the '🛒 Mulai Transaksi' button — opens catalog."""
+async def handler_mulai_inline(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler for the '🛒 Mulai Transaksi' inline button."""
+    query = update.callback_query
     user_id = update.effective_user.id
+    
+    if query:
+        await query.answer()
 
     if not auth_is_kasir(user_id):
-        await update.message.reply_text("⛔ Kamu belum terdaftar. Kirim /start untuk instruksi pendaftaran.")
+        if query:
+            await query.edit_message_text("⛔ Kamu belum terdaftar.")
         return
 
     ensure_cart_loaded(user_id, context)
     text = build_cart_text_from_memory(
         context, "🏪 *Katalog Produk*\n\nSilakan pilih kategori:")
     reply_markup = build_categories_keyboard()
-    await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+    
+    if query:
+        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+    else:
+        await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
 
 
 async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -728,7 +758,8 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Save invoice_no back to the transaction
         new_trx.invoice_no = trx_no
 
-        # Save transaction items (line-item snapshots)
+        # Save transaction items (line-item snapshots) and deduct stock
+        tenant_id = get_tenant_id(user_id)
         for item in calc["items"]:
             trx_item = TransactionItem(
                 transaction_id=new_trx.id,
@@ -742,6 +773,22 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 subtotal=item["final_subtotal"]
             )
             db.add(trx_item)
+
+            # Deduct stock
+            product = db.query(Product).filter(Product.id == item["product_id"]).first()
+            if product:
+                product.stock = max(0, product.stock - item["qty"])
+                movement = StockMovement(
+                    product_id=product.id,
+                    tenant_id=tenant_id,
+                    movement_type="out",
+                    quantity=-item["qty"],
+                    reference=trx_no,
+                    notes="Sale (Cash)",
+                    created_by=user_id,
+                )
+                db.add(movement)
+
         db.commit()
 
         recommendations = get_recommendations(calc["purchased_categories"])
@@ -838,7 +885,8 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         trx_no = f"INV-{new_trx.id:06d}"
         new_trx.invoice_no = trx_no
 
-        # Save transaction items (line-item snapshots)
+        # Save transaction items (line-item snapshots) and deduct stock
+        tenant_id = get_tenant_id(user_id)
         for item in calc["items"]:
             trx_item = TransactionItem(
                 transaction_id=new_trx.id,
@@ -852,6 +900,21 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 subtotal=item["final_subtotal"]
             )
             db.add(trx_item)
+            
+            # Deduct stock
+            product = db.query(Product).filter(Product.id == item["product_id"]).first()
+            if product:
+                product.stock = max(0, product.stock - item["qty"])
+                movement = StockMovement(
+                    product_id=product.id,
+                    tenant_id=tenant_id,
+                    movement_type="out",
+                    quantity=-item["qty"],
+                    reference=trx_no,
+                    notes="Sale (QRIS)",
+                    created_by=user_id,
+                )
+                db.add(movement)
         db.commit()
 
         # Get recommendations
@@ -1041,6 +1104,21 @@ async def post_init(application):
         BotCommand("cancel",  "❌ Batalkan operasi"),
     ]
     await application.bot.set_my_commands(commands)
+    
+    # Set the bottom-left Menu button to open the Mini App Dashboard
+    try:
+        from config import API_BASE_URL
+        dashboard_url = f"{API_BASE_URL.rstrip('/')}/miniapp/index.html"
+        if dashboard_url.startswith("https://"):
+            await application.bot.set_chat_menu_button(
+                menu_button=MenuButtonWebApp(text="📊 Dashboard", web_app=WebAppInfo(url=dashboard_url))
+            )
+            logger.info("Menu button set to Mini App Dashboard: %s", dashboard_url)
+        else:
+            logger.warning("Skipping Mini App menu button — API_BASE_URL is not HTTPS: %s", API_BASE_URL)
+    except Exception as e:
+        logger.warning("Failed to set menu button (non-fatal): %s", e)
+    
     # Pre-load product cache at startup
     _refresh_cache_if_needed()
 
@@ -1056,25 +1134,50 @@ if __name__ == "__main__":
         .build()
     )
 
-    # ConversationHandlers — order matters: more specific first
-    app.add_handler(get_owner_handler())          # /panel  — Owner panel
-    app.add_handler(get_admin_conv_handler())     # /promo  — Promotions CRUD
-    app.add_handler(get_admin_schedule_handler()) # /jadwal — Schedule CRUD
-    app.add_handler(get_report_conv_handler())    # /laporan — Sales reports
-    app.add_handler(get_void_conv_handler())      # /void   — Void transaction
+    # Order matters: more specific first
+    app.add_handler(get_stock_handler())          # /stock menu (stk_menu)
+    app.add_handler(get_owner_handler())          # /panel
+    app.add_handler(get_admin_conv_handler())     # /promo
+    app.add_handler(get_admin_schedule_handler()) # /jadwal
+    app.add_handler(get_report_conv_handler())    # /laporan
+    app.add_handler(get_void_conv_handler())      # /void
 
     app.add_handler(CommandHandler("start",    start))
     app.add_handler(CommandHandler("help",     handler_help))
     app.add_handler(CommandHandler("riwayat",  riwayat_command))
+
+    # Main menu inline routes (bridges to the commands)
+    app.add_handler(CallbackQueryHandler(handler_mulai_inline, pattern="^main_transaksi$"))
+    
+    # Simple bridge for other main menu buttons (treat them as text commands internally)
+    async def bridge_callback(update, context):
+        query = update.callback_query
+        await query.answer()
+        # Not perfect, but we can't easily trigger ConversationHandlers via simple callback 
+        # unless their entry_points accept these patterns. We'll tell the user to use commands.
+        cmd_map = {
+            "main_laporan": "/laporan",
+            "main_promo": "/promo",
+            "main_jadwal": "/jadwal",
+            "main_panel": "/panel"
+        }
+        cmd = cmd_map.get(query.data)
+        if cmd:
+            # Delete old message to clean up inline keyboard
+            await query.delete_message()
+            # Send prompt
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id, 
+                text=f"Untuk menu ini, silakan klik atau ketik: {cmd}"
+            )
+
+    app.add_handler(CallbackQueryHandler(bridge_callback, pattern="^main_(laporan|promo|jadwal|panel)$"))
 
     # Voice confirmation callback handler (must be before generic button_click)
     app.add_handler(CallbackQueryHandler(handle_voice_callback, pattern="^vc_"))
     # Transaction detail callback handler
     app.add_handler(CallbackQueryHandler(handle_trx_detail_callback, pattern="^trx_detail_"))
     app.add_handler(CallbackQueryHandler(button_click))
-
-    # Main menu button handler
-    app.add_handler(MessageHandler(filters.Regex("^🛒 Mulai Transaksi$"), handler_mulai))
 
     # Voice note handler — AI-powered CRUD via voice commands (owner only)
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))

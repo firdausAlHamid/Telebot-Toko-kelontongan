@@ -90,6 +90,30 @@ class Product(Base):
     item_name = Column(String(255))
     price = Column(Integer)
 
+    # --- Stock Management ---
+    stock = Column(Integer, default=0)                            # current stock count
+    min_stock = Column(Integer, default=0)                        # minimum stock alert threshold
+
+    # --- Consignment (Titipan) ---
+    is_consignment = Column(Boolean, default=False)               # produk titipan/konsinyasi
+    consignment_supplier = Column(String(255), nullable=True)     # nama supplier
+
+
+class StockMovement(Base):
+    """Catatan pergerakan stok — barang masuk, keluar, dan penyesuaian."""
+    __tablename__ = "stock_movements"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=True)
+    movement_type = Column(String(20), nullable=False)    # "in" / "out" / "adjustment"
+    quantity = Column(Integer, nullable=False)             # positive = masuk, negative = keluar
+    reference = Column(String(100), nullable=True)         # "INV-000001", "Manual", etc.
+    notes = Column(String(255), nullable=True)
+    created_by = Column(BigInteger, nullable=True)         # telegram_id
+    created_at = Column(DateTime, default=datetime.now)
+
+
 
 class Transaction(Base):
     """

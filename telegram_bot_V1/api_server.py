@@ -22,10 +22,11 @@ from datetime import datetime, timedelta
 from urllib.parse import unquote, parse_qsl
 
 from fastapi import FastAPI, HTTPException, Header, Request
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from database import SessionLocal, BotUser, Tenant, RegistrationToken, Transaction
+from database import SessionLocal, BotUser, Tenant, RegistrationToken, Transaction, Product, TransactionItem
 from sqlalchemy import func, desc
 
 # ── Try to import config, fall back to env vars ───────────────────────────────
@@ -264,6 +265,10 @@ async def mini_dashboard(request: Request):
         tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
         store_name = tenant.store_name if tenant else None
 
+    # Stock overview (total products, low stock count)
+    total_products = db.query(Product).count()
+    low_stock = db.query(Product).filter((Product.stock <= Product.min_stock) | (Product.stock == 0)).count()
+
     db.close()
 
     return {
@@ -277,7 +282,72 @@ async def mini_dashboard(request: Request):
             "payment_breakdown": payment_breakdown,
         },
         "month_revenue": month_revenue,
+        "stock": {
+            "total_products": total_products,
+            "low_stock": low_stock
+        }
     }
+
+
+@app.get("/api/mini/stock-summary")
+async def mini_stock_summary(request: Request):
+    """Return total stock per category."""
+    init_data = request.headers.get("X-Telegram-Init-Data", "")
+    tg_user, bot_user = get_user_from_init_data(init_data)
+    if not bot_user:
+        raise HTTPException(status_code=403, detail="User belum terdaftar.")
+
+    db = SessionLocal()
+    summary = db.query(Product.category, func.sum(Product.stock)).group_by(Product.category).all()
+    db.close()
+
+    return [{"category": s[0], "total_stock": int(s[1] or 0)} for s in summary]
+
+
+@app.get("/api/mini/top-products")
+async def mini_top_products(request: Request):
+    """Return top 5 best-selling products in the last 7 days."""
+    init_data = request.headers.get("X-Telegram-Init-Data", "")
+    tg_user, bot_user = get_user_from_init_data(init_data)
+    if not bot_user:
+        raise HTTPException(status_code=403, detail="User belum terdaftar.")
+
+    db = SessionLocal()
+    seven_days_ago = datetime.now() - timedelta(days=7)
+    
+    top_items = (
+        db.query(TransactionItem.product_name, func.sum(TransactionItem.quantity).label("qty"))
+        .join(Transaction, Transaction.id == TransactionItem.transaction_id)
+        .filter(Transaction.status == "completed", Transaction.created_at >= seven_days_ago)
+        .group_by(TransactionItem.product_name)
+        .order_by(desc("qty"))
+        .limit(5)
+        .all()
+    )
+    db.close()
+
+    return [{"product_name": t[0], "quantity": int(t[1])} for t in top_items]
+
+
+@app.get("/api/mini/consignment")
+async def mini_consignment(request: Request):
+    """Return list of consignment products and their stock."""
+    init_data = request.headers.get("X-Telegram-Init-Data", "")
+    tg_user, bot_user = get_user_from_init_data(init_data)
+    if not bot_user:
+        raise HTTPException(status_code=403, detail="User belum terdaftar.")
+
+    db = SessionLocal()
+    items = db.query(Product).filter(Product.is_consignment == True).all()
+    db.close()
+
+    return [{
+        "id": p.id,
+        "name": p.item_name,
+        "supplier": p.consignment_supplier or "-",
+        "stock": p.stock,
+        "price": p.price
+    } for p in items]
 
 
 @app.get("/api/mini/kasir-list")
@@ -411,3 +481,18 @@ async def mini_deactivate_kasir(telegram_id: int, request: Request):
 @app.get("/health")
 async def health():
     return {"status": "ok", "timestamp": datetime.now().isoformat()}
+
+
+# ==============================================================================
+# STATIC FILE SERVING (Mini App & Website)
+# ==============================================================================
+import os
+_base_dir = os.path.dirname(os.path.abspath(__file__))
+
+_miniapp_dir = os.path.join(_base_dir, "miniapp")
+if os.path.isdir(_miniapp_dir):
+    app.mount("/miniapp", StaticFiles(directory=_miniapp_dir, html=True), name="miniapp")
+
+_website_dir = os.path.join(_base_dir, "website")
+if os.path.isdir(_website_dir):
+    app.mount("/website", StaticFiles(directory=_website_dir, html=True), name="website")
