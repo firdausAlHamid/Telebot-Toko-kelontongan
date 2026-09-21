@@ -48,25 +48,37 @@ def get_role(telegram_id: int) -> str:
     return user.role if user else "unknown"
 
 
+from config import OWNER_TELEGRAM_ID
+
 def is_kasir(telegram_id: int) -> bool:
     """True if role is kasir OR owner (owners can also use all kasir features)."""
+    if telegram_id == OWNER_TELEGRAM_ID:
+        return True
     return get_role(telegram_id) in ("kasir", "owner")
 
 
 def is_owner(telegram_id: int) -> bool:
     """True ONLY if role is owner (can manage staff & view full reports)."""
+    if telegram_id == OWNER_TELEGRAM_ID:
+        return True
     return get_role(telegram_id) == "owner"
 
 
 def is_registered(telegram_id: int) -> bool:
     """True if the user has any active role (owner or kasir)."""
+    if telegram_id == OWNER_TELEGRAM_ID:
+        return True
     return get_role(telegram_id) in ("owner", "kasir")
 
 
 def get_tenant_id(telegram_id: int):
     """Return the tenant_id for a user, or None."""
     user = _get_bot_user(telegram_id)
-    return user.tenant_id if user else None
+    if user:
+        return user.tenant_id
+    if telegram_id == OWNER_TELEGRAM_ID:
+        return 1
+    return None
 
 
 def get_store_name(telegram_id: int) -> str | None:
@@ -77,7 +89,11 @@ def get_store_name(telegram_id: int) -> str | None:
     db = SessionLocal()
     tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
     db.close()
-    return tenant.store_name if tenant else None
+    if tenant:
+        return getattr(tenant, "name", None) or getattr(tenant, "store_name", "Toko Ciamis")
+    if telegram_id == OWNER_TELEGRAM_ID:
+        return "Toko Ciamis (Admin Dev)"
+    return None
 
 
 def sync_user_info(telegram_id: int, username: str | None, full_name: str | None):

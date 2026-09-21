@@ -65,16 +65,18 @@ async def _show_owner_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Mini App URL
     mini_app_url = f"{API_BASE_URL.rstrip('/')}/miniapp/"
 
-    keyboard = [
-        [InlineKeyboardButton(
-            "📊 Buka Dashboard",
-            web_app=WebAppInfo(url=mini_app_url)
-        )],
+    keyboard = []
+    if mini_app_url.startswith("https://"):
+        keyboard.append([InlineKeyboardButton("📊 Buka Dashboard", web_app=WebAppInfo(url=mini_app_url))])
+    else:
+        keyboard.append([InlineKeyboardButton("📊 Buka Dashboard (Lokal)", callback_data="own_dashboard_info")])
+    
+    keyboard.extend([
         [InlineKeyboardButton("🔑 Generate Token Kasir", callback_data="own_gen_token")],
         [InlineKeyboardButton("👥 Lihat Daftar Kasir",   callback_data="own_list_kasir")],
         [InlineKeyboardButton("❌ Nonaktifkan Kasir",     callback_data="own_deact_kasir")],
         [InlineKeyboardButton("🏪 Info Toko",             callback_data="own_info")],
-    ]
+    ])
 
     text = f"🏪 *Panel Owner — {store_name}*\n\nPilih aksi:"
 
@@ -268,6 +270,21 @@ async def handle_store_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return OWNER_MENU
 
 
+async def handle_dashboard_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show info for local dashboard URL."""
+    query = update.callback_query
+    await query.answer()
+    mini_app_url = f"{API_BASE_URL.rstrip('/')}/miniapp/"
+    text = (
+        f"📊 *Dashboard Mini App (Dev Mode)*\n\n"
+        f"Gunakan URL berikut di browser Anda:\n`{mini_app_url}`\n\n"
+        f"💡 _Telegram mewajibkan HTTPS untuk membuka Mini App langsung di dalam aplikasi Telegram._"
+    )
+    keyboard = [[InlineKeyboardButton("🔙 Kembali", callback_data="own_back")]]
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    return OWNER_MENU
+
+
 # ==============================================================================
 # CONVERSATION HANDLER BUILDER
 # ==============================================================================
@@ -278,6 +295,7 @@ def get_owner_handler() -> ConversationHandler:
         entry_points=[CommandHandler("panel", panel_command)],
         states={
             OWNER_MENU: [
+                CallbackQueryHandler(handle_dashboard_info, pattern="^own_dashboard_info$"),
                 CallbackQueryHandler(handle_gen_token,      pattern="^own_gen_token$"),
                 CallbackQueryHandler(handle_list_kasir,     pattern="^own_list_kasir$"),
                 CallbackQueryHandler(handle_deact_kasir_menu, pattern="^own_deact_kasir$"),
