@@ -17,15 +17,25 @@ import sys
 import pymysql
 from datetime import datetime
 
-# ── DB Connection ─────────────────────────────────────────────────────────────
-# Adjust these if your DB config is different
-DB_CONFIG = {
-    "host": "localhost",
-    "user": "root",
-    "password": "",
-    "database": "toko_kelontong",
-    "charset": "utf8mb4",
-}
+try:
+    from config import DATABASE_URL
+    from urllib.parse import urlparse
+    parsed = urlparse(DATABASE_URL)
+    DB_CONFIG = {
+        "host": parsed.hostname or "localhost",
+        "user": parsed.username or "root",
+        "password": parsed.password or "",
+        "database": parsed.path.lstrip('/') or "toko_kelontong",
+        "charset": "utf8mb4",
+    }
+except Exception:
+    DB_CONFIG = {
+        "host": "localhost",
+        "user": "root",
+        "password": "",
+        "database": "toko_kelontong",
+        "charset": "utf8mb4",
+    }
 
 # ── Tables to TRUNCATE (order matters due to FK constraints) ─────────────────
 TABLES_TO_TRUNCATE = [
