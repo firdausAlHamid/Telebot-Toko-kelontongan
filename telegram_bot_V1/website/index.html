@@ -276,8 +276,8 @@
   <footer>© 2025 POS Bot Telegram — Sistem kasir modern berbasis Telegram</footer>
 
   <script>
-    // API base URL — replace with your actual deployed API URL
-    const API_BASE = (window.API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '');
+    // API base URL — fallback to window.location.origin if API_BASE_URL is not injected
+    const API_BASE = (window.API_BASE_URL || window.location.origin).replace(/\/$/, '');
     // API Secret — should be injected at deploy time (NOT hardcoded in production)
     const API_SECRET = window.API_SECRET_KEY || 'AQ.Ab8RN6LssIa56vuNqcmz06f5i9EpYh5LJPttxKHhL4wRj7TMMw';
 
