@@ -309,6 +309,8 @@ def get_owner_handler() -> ConversationHandler:
         },
         fallbacks=[
             CommandHandler("cancel", lambda u, c: ConversationHandler.END),
+            CommandHandler("panel", panel_command),
         ],
+        allow_reentry=True,
         per_message=False,
     )
