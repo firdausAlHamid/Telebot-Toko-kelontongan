@@ -11,7 +11,7 @@ socket.getaddrinfo = _ipv4_getaddrinfo
 
 from telegram import Update, BotCommand
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters, CallbackQueryHandler
-from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, MenuButtonWebApp, WebAppInfo
+from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, MenuButtonWebApp, MenuButtonDefault, WebAppInfo
 from sqlalchemy import func
 from database import SessionLocal, CartItem, Product, Transaction, TransactionItem, StockMovement
 from receipt_generator import generate_receipt_image
@@ -1115,7 +1115,10 @@ async def post_init(application):
             )
             logger.info("Menu button set to Mini App Dashboard: %s", dashboard_url)
         else:
-            logger.warning("Skipping Mini App menu button — API_BASE_URL is not HTTPS: %s", API_BASE_URL)
+            await application.bot.set_chat_menu_button(
+                menu_button=MenuButtonDefault()
+            )
+            logger.info("Reset menu button to default commands menu (HTTP mode)")
     except Exception as e:
         logger.warning("Failed to set menu button (non-fatal): %s", e)
     
