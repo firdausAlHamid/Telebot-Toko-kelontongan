@@ -434,7 +434,7 @@ def get_report_conv_handler():
         allow_reentry=True,
         per_user=True,
         per_chat=True,
-        per_message=True,
+        per_message=False,
     )
 
 
@@ -462,5 +462,5 @@ def get_void_conv_handler():
         allow_reentry=True,
         per_user=True,
         per_chat=True,
-        per_message=True,
+        per_message=False,
     )
