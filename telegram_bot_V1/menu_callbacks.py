@@ -41,9 +41,16 @@ async def handle_main_transaksi(update: Update, context: ContextTypes.DEFAULT_TY
         reply_markup = main.build_categories_keyboard()
 
         if query:
-            await query.edit_message_text(
-                text, reply_markup=reply_markup, parse_mode="Markdown"
-            )
+            try:
+                await query.edit_message_text(
+                    text, reply_markup=reply_markup, parse_mode="Markdown"
+                )
+            except Exception as exc:
+                if "Message is not modified" in str(exc):
+                    pass
+                else:
+                    raise
+
         elif update.message:
             await update.message.reply_text(
                 text, reply_markup=reply_markup, parse_mode="Markdown"
