@@ -13,8 +13,8 @@ from telegram.ext import (
     MessageHandler, ConversationHandler, filters
 )
 
-from auth import is_kasir as _is_kasir
-from database import SessionLocal, Product
+from auth import is_kasir as _is_kasir, get_tenant_id
+from database import SessionLocal, Product, Promotion
 from promotion_service import (
     create_promotion, list_promotions, delete_promotion,
     update_promotion, format_date_indo
@@ -38,10 +38,10 @@ def is_admin(update: Update) -> bool:
     return _is_kasir(update.effective_user.id)
 
 
-def get_categories():
+def get_categories(tenant_id=None):
     """Get list of product categories from database."""
     db = SessionLocal()
-    cats = db.query(Product.category).distinct().order_by(Product.category).all()
+    cats = db.query(Product.category).filter(Product.tenant_id == tenant_id).distinct().order_by(Product.category).all()
     db.close()
     return [c[0] for c in cats]
 
@@ -104,7 +104,8 @@ async def handle_promo_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def show_add_categories(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show product categories for browsing."""
-    categories = get_categories()
+    tenant_id = get_tenant_id(update.effective_user.id)
+    categories = get_categories(tenant_id)
     context.user_data["promo_categories"] = categories
 
     keyboard = []
@@ -158,13 +159,15 @@ async def handle_add_category(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def show_add_products(update: Update, context: ContextTypes.DEFAULT_TYPE, category, page=1):
     """Show products in a category for selection (paginated)."""
+    tenant_id = get_tenant_id(update.effective_user.id)
     db = SessionLocal()
     per_page = 5
-    total = db.query(Product).filter(Product.category == category).count()
+    total = db.query(Product).filter(Product.category == category, Product.tenant_id == tenant_id).count()
     total_pages = math.ceil(total / per_page)
     offset = (page - 1) * per_page
     products = db.query(Product).filter(
-        Product.category == category
+        Product.category == category,
+        Product.tenant_id == tenant_id
     ).offset(offset).limit(per_page).all()
     db.close()
 
@@ -382,7 +385,8 @@ async def handle_add_end_date(update: Update, context: ContextTypes.DEFAULT_TYPE
     add_data["end_date"] = end_date
 
     # Show target category selection
-    categories = get_categories()
+    tenant_id = get_tenant_id(update.effective_user.id)
+    categories = get_categories(tenant_id)
     context.user_data["promo_categories"] = categories
 
     keyboard = []
@@ -747,7 +751,8 @@ async def handle_edit_field(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "ap_ef_tc":
         context.user_data["editing_field"] = "target_category"
-        categories = get_categories()
+        tenant_id = get_tenant_id(query.effective_user.id)
+        categories = get_categories(tenant_id)
         context.user_data["promo_categories"] = categories
 
         keyboard = []

@@ -1,12 +1,40 @@
 import io
+import os
 import qrcode
 import textwrap
 from PIL import Image, ImageDraw, ImageFont
 
+
+def _load_fonts():
+    """Load monospace fonts with layered fallback. Returns (font, bold, title, small)."""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        (os.path.join(base_dir, "fonts", "DejaVuSansMono.ttf"),
+         os.path.join(base_dir, "fonts", "DejaVuSansMono-Bold.ttf")),
+        (os.path.join(base_dir, "fonts", "IBMPlexMono-Regular.ttf"),
+         os.path.join(base_dir, "fonts", "IBMPlexMono-Bold.ttf")),
+        ("fonts/DejaVuSansMono.ttf", "fonts/DejaVuSansMono-Bold.ttf"),
+        ("DejaVuSansMono.ttf", "DejaVuSansMono-Bold.ttf"),
+        ("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+         "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"),
+    ]
+    for regular, bold in candidates:
+        try:
+            font = ImageFont.truetype(regular, 18)
+            font_bold = ImageFont.truetype(bold, 22)
+            font_title = ImageFont.truetype(bold, 28)
+            font_small = ImageFont.truetype(regular, 14)
+            return font, font_bold, font_title, font_small
+        except (IOError, OSError):
+            continue
+    font = ImageFont.load_default()
+    return font, font, font, font
+
 def generate_receipt_image(
     trx_no, date_str, cart_items, total, payment_method,
     discount_details=None, total_discount=0, grand_total=None,
-    recommendations=None, whatsapp_number=None, store_schedule=None
+    recommendations=None, whatsapp_number=None, store_schedule=None,
+    store_name="TOKO KELONTONG"
 ):
     """
     Generates a 58mm thermal-printer compatible receipt image.
@@ -14,17 +42,8 @@ def generate_receipt_image(
     Returns an io.BytesIO object containing the PNG image.
     """
     WIDTH = 384
-    
-    try:
-        font = ImageFont.truetype("consola.ttf", 20)
-        font_bold = ImageFont.truetype("consolab.ttf", 24)
-        font_title = ImageFont.truetype("consolab.ttf", 32)
-        font_small = ImageFont.truetype("consola.ttf", 16)
-    except IOError:
-        font = ImageFont.load_default()
-        font_bold = font
-        font_title = font
-        font_small = font
+
+    font, font_bold, font_title, font_small = _load_fonts()
 
     # Instead of predicting the exact height perfectly beforehand,
     # we create a generously large canvas and crop it at the end.
@@ -44,7 +63,7 @@ def generate_receipt_image(
             return len(text) * (12 if f == font_bold else 10)
 
     # Draw Title (Centered)
-    title = "TOKO KELONTONG"
+    title = store_name
     title_w = get_text_width(title, font_title)
     draw.text(((WIDTH - title_w) / 2, y), title, font=font_title, fill='black')
     y += 40

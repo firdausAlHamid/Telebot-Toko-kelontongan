@@ -27,9 +27,11 @@ from schedule_service import get_today_schedule_status, get_upcoming_schedules_r
 from voice_ai_handler import handle_voice, handle_voice_callback, handle_voice_text_correction
 from owner_handlers import get_owner_handler
 from stock_handlers import get_stock_handler
+from product_handlers import get_product_handler
+import urllib.parse
 from auth import (
     sync_user_info, is_registered, is_kasir as auth_is_kasir,
-    is_owner as auth_is_owner, validate_and_activate_token, get_tenant_id
+    is_owner as auth_is_owner, validate_and_activate_token, get_tenant_id, get_store_name
 )
 import math
 import datetime
@@ -65,56 +67,81 @@ DENOM_LABELS = {
 
 # =============================================================================
 # --- Product Cache (avoid re-querying DB on every button click) ---
+# Per-tenant cache to support multi-tenant isolation
 # =============================================================================
 
-_product_cache = {}       # {product_id: {"id", "item_name", "price", "category", ...}}
-_category_cache = []      # list of category names
-_cache_timestamp = 0
+_product_cache = {}       # {tenant_id: {product_id: {"id", "item_name", "price", "category", ...}}}
+_category_cache = {}      # {tenant_id: [list of category names]}
+_cache_timestamp = {}     # {tenant_id: timestamp}
 CACHE_TTL = 60            # seconds — refresh every 60s
 
 
-def _refresh_cache_if_needed():
+# Callback data helpers — URL-encode category names to handle spaces/special chars
+def _enc(s: str) -> str:
+    """Encode string for safe callback data (max 64 bytes)."""
+    # Use quote with safe chars to keep it readable, truncate if needed
+    encoded = urllib.parse.quote(s, safe='')
+    return encoded[:50]  # leave room for prefixes like "cat_", "page_", etc.
+
+def _dec(s: str) -> str:
+    """Decode callback data string."""
+    return urllib.parse.unquote(s)
+
+
+def _refresh_cache_if_needed(tenant_id=None):
     """Refresh product/category cache if stale."""
     global _product_cache, _category_cache, _cache_timestamp
+    
+    if tenant_id is None:
+        # For demo/tenant products, use 0 as key
+        tenant_id = 0
+    
     now = time.time()
-    if now - _cache_timestamp < CACHE_TTL and _product_cache:
+    if _cache_timestamp.get(tenant_id, 0) and now - _cache_timestamp[tenant_id] < CACHE_TTL and _product_cache.get(tenant_id):
         return
+    
     db = SessionLocal()
-    products = db.query(Product).all()
-    _product_cache = {
+    products = db.query(Product).filter(Product.tenant_id == tenant_id).all()
+    _product_cache[tenant_id] = {
         p.id: {"id": p.id, "item_name": p.item_name, "price": p.price, "category": p.category}
         for p in products
     }
-    _category_cache = list(db.query(Product.category).distinct().all())
+    _category_cache[tenant_id] = [cat[0] for cat in db.query(Product.category).distinct().filter(Product.tenant_id == tenant_id).all()]
     db.close()
-    _cache_timestamp = now
+    _cache_timestamp[tenant_id] = now
 
 
-def invalidate_product_cache():
+def invalidate_product_cache(tenant_id=None):
     """Call this after admin adds/edits/removes products to force refresh."""
     global _cache_timestamp
-    _cache_timestamp = 0
+    if tenant_id is None:
+        # Invalidate all tenant caches
+        _cache_timestamp.clear()
+    else:
+        _cache_timestamp[tenant_id] = 0
 
 
-def get_cached_products_by_category(category, offset=0, limit=5):
+def get_cached_products_by_category(category, tenant_id=None, offset=0, limit=5):
     """Get products from cache filtered by category with pagination."""
-    _refresh_cache_if_needed()
-    all_products = [p for p in _product_cache.values() if p["category"] == category]
+    _refresh_cache_if_needed(tenant_id)
+    products = _product_cache.get(tenant_id or 0, {})
+    all_products = [p for p in products.values() if p["category"] == category]
     return all_products[offset:offset + limit], len(all_products)
 
 
-def get_cached_categories():
+def get_cached_categories(tenant_id=None):
     """Get distinct categories from cache."""
-    _refresh_cache_if_needed()
-    return _category_cache
+    _refresh_cache_if_needed(tenant_id)
+    return _category_cache.get(tenant_id or 0, [])
 
 
-def get_full_category_name(prefix):
+def get_full_category_name(prefix, tenant_id=None):
     """Get full category name from prefix using cache."""
-    _refresh_cache_if_needed()
-    for cat in _category_cache:
-        if cat[0].startswith(prefix):
-            return cat[0]
+    _refresh_cache_if_needed(tenant_id)
+    categories = _category_cache.get(tenant_id or 0, [])
+    for cat in categories:
+        if cat.startswith(prefix):
+            return cat
     return prefix
 
 
@@ -149,15 +176,16 @@ def remove_from_memory_cart(context, product_id):
     set_memory_cart(context, cart)
 
 
-def memory_cart_to_summary(context):
+def memory_cart_to_summary(context, tenant_id=None):
     """Convert in-memory cart to the same format as get_cart_summary().
     Returns list of tuples: (product_id, item_name, price, qty)
     """
-    _refresh_cache_if_needed()
+    _refresh_cache_if_needed(tenant_id)
+    products = _product_cache.get(tenant_id or 0, {})
     cart = get_memory_cart(context)
     items = []
     for product_id, qty in cart.items():
-        product = _product_cache.get(product_id)
+        product = products.get(product_id)
         if product and qty > 0:
             items.append((product["id"], product["item_name"], product["price"], qty))
     return items
@@ -207,7 +235,7 @@ def ensure_cart_loaded(user_id, context):
 # --- Helper Functions ---
 # =============================================================================
 
-def get_cart_summary(user_id):
+def get_cart_summary(user_id, tenant_id=None):
     """Get cart items joined with products for a user (DB version for checkout)."""
     db = SessionLocal()
     items = db.query(
@@ -218,7 +246,8 @@ def get_cart_summary(user_id):
     ).join(
         Product, CartItem.product_id == Product.id
     ).filter(
-        CartItem.user_id == user_id
+        CartItem.user_id == user_id,
+        Product.tenant_id == tenant_id
     ).group_by(Product.id).all()
     db.close()
     return items
@@ -249,9 +278,9 @@ def build_cart_text_from_memory(context, prepend_text=""):
     return text
 
 
-def build_cart_text(user_id, prepend_text=""):
+def build_cart_text(user_id, tenant_id=None, prepend_text=""):
     """Build the cart summary text (legacy DB version)."""
-    cart_items = get_cart_summary(user_id)
+    cart_items = get_cart_summary(user_id, tenant_id)
 
     text = prepend_text + "\n"
 
@@ -364,17 +393,17 @@ def build_cash_text(grand_total, cash_data):
     return text
 
 
-def build_categories_keyboard():
+def build_categories_keyboard(tenant_id=None):
     """Build the inline keyboard for categories (uses cache)."""
-    categories = get_cached_categories()
+    categories = get_cached_categories(tenant_id)
 
     keyboard = []
     # Display 2 categories per row
     row = []
     for cat in categories:
-        cat_name = cat[0]
-        # Using a short callback data to avoid Telegram's 64 byte limit
-        cb_data = f"cat_{cat_name[:20]}"
+        cat_name = cat  # already a string, not a tuple
+        # URL-encode category name for safe callback data
+        cb_data = f"cat_{_enc(cat_name)}"
         row.append(InlineKeyboardButton(cat_name, callback_data=cb_data))
         if len(row) == 2:
             keyboard.append(row)
@@ -387,9 +416,10 @@ def build_categories_keyboard():
     return InlineKeyboardMarkup(keyboard)
 
 
-def build_products_keyboard(category_prefix, page=1):
+def build_products_keyboard(category_prefix, page=1, tenant_id=None):
     """Build the inline keyboard for products in a category with pagination (uses cache)."""
-    category = get_full_category_name(category_prefix)
+    category = get_full_category_name(category_prefix, tenant_id)
+    enc_cat = _enc(category)  # encode full category name for callback data
 
     per_page = 5
     offset = (page - 1) * per_page
@@ -415,19 +445,19 @@ def build_products_keyboard(category_prefix, page=1):
         keyboard.append([InlineKeyboardButton(label, callback_data=f"noop")])
         keyboard.append([
             InlineKeyboardButton(
-                "➖", callback_data=f"rem_{p['id']}_{category_prefix}_{page}"),
+                "➖", callback_data=f"rem_{p['id']}_{enc_cat}_{page}"),
             InlineKeyboardButton(
-                "➕ Tambah", callback_data=f"add_{p['id']}_{category_prefix}_{page}")
+                "➕ Tambah", callback_data=f"add_{p['id']}_{enc_cat}_{page}")
         ])
 
     # Pagination Row
     nav_row = []
     if page > 1:
         nav_row.append(InlineKeyboardButton(
-            "⬅️ Prev", callback_data=f"page_{category_prefix}_{page-1}"))
+            "⬅️ Prev", callback_data=f"page_{enc_cat}_{page-1}"))
     if page < total_pages:
         nav_row.append(InlineKeyboardButton(
-            "Next ➡️", callback_data=f"page_{category_prefix}_{page+1}"))
+            "Next ➡️", callback_data=f"page_{enc_cat}_{page+1}"))
     if nav_row:
         keyboard.append(nav_row)
 
@@ -455,6 +485,7 @@ def _build_main_menu_keyboard(is_owner_user=False):
             InlineKeyboardButton("🗓️ Jadwal", callback_data="main_jadwal")
         ])
         kb.append([
+            InlineKeyboardButton("📦 Produk", callback_data="prod_menu"), 
             InlineKeyboardButton("⚙️ Panel Owner", callback_data="main_panel"), 
             # We can use web_app for dashboard later
         ])
@@ -539,9 +570,10 @@ async def handler_mulai_inline(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     ensure_cart_loaded(user_id, context)
+    tenant_id = get_tenant_id(user_id)
     text = build_cart_text_from_memory(
         context, "🏪 *Katalog Produk*\n\nSilakan pilih kategori:")
-    reply_markup = build_categories_keyboard()
+    reply_markup = build_categories_keyboard(tenant_id)
     
     if query:
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
@@ -597,18 +629,21 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Handle "back to categories"
     if data in ("back_to_cat", "back_to_catalog"):
         await query.answer()
+        tenant_id = get_tenant_id(user_id)
         text = build_cart_text_from_memory(
             context, "🏪 *Katalog Produk*\n\nSilakan pilih kategori:")
-        reply_markup = build_categories_keyboard()
+        reply_markup = build_categories_keyboard(tenant_id)
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
         return
 
-    # Handle category click (cat_<category_prefix>)
+    # Handle category click (cat_<encoded_category>)
     if data.startswith("cat_"):
         await query.answer()
-        cat_prefix = data[4:]
+        enc_cat = data[4:]
+        cat_prefix = _dec(enc_cat)
+        tenant_id = get_tenant_id(user_id)
         reply_markup, full_cat_name = build_products_keyboard(
-            cat_prefix, page=1)
+            cat_prefix, page=1, tenant_id=tenant_id)
         text = build_cart_text_from_memory(
             context, f"📦 *Kategori: {full_cat_name}*\n\nPilih produk:")
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
@@ -726,7 +761,8 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Sync cart to DB first
         sync_memory_cart_to_db(user_id, context)
 
-        cart_items = get_cart_summary(user_id)
+        tenant_id = get_tenant_id(user_id)
+        cart_items = get_cart_summary(user_id, tenant_id)
         if not cart_items:
             await query.edit_message_text("Keranjang kamu masih kosong.")
             return
@@ -793,6 +829,7 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         recommendations = get_recommendations(calc["purchased_categories"])
         store_schedule = get_upcoming_schedules_receipt()
+        store_name = get_store_name(user_id) or "TOKO KELONTONG"
         receipt_io = generate_receipt_image(
             trx_no=trx_no,
             date_str=date_str,
@@ -804,7 +841,8 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
             grand_total=calc["grand_total"],
             recommendations=recommendations,
             whatsapp_number=WHATSAPP_NUMBER,
-            store_schedule=store_schedule
+            store_schedule=store_schedule,
+            store_name=store_name
         )
 
         db.query(CartItem).filter(CartItem.user_id == user_id).delete()
@@ -853,7 +891,8 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Sync cart to DB first
         sync_memory_cart_to_db(user_id, context)
 
-        cart_items = get_cart_summary(user_id)
+        tenant_id = get_tenant_id(user_id)
+        cart_items = get_cart_summary(user_id, tenant_id)
         if not cart_items:
             await query.edit_message_text("Keranjang kamu masih kosong.")
             return
@@ -922,6 +961,7 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Generate Image receipt
         store_schedule = get_upcoming_schedules_receipt()
+        store_name = get_store_name(user_id) or "TOKO KELONTONG"
         receipt_io = generate_receipt_image(
             trx_no=trx_no,
             date_str=date_str,
@@ -933,7 +973,8 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
             grand_total=calc["grand_total"],
             recommendations=recommendations,
             whatsapp_number=WHATSAPP_NUMBER,
-            store_schedule=store_schedule
+            store_schedule=store_schedule,
+            store_name=store_name
         )
 
         # Clear cart (DB + memory)
@@ -954,57 +995,68 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Handle pagination (page_<category_prefix>_<page>)
+    # Handle pagination (page_<encoded_category>_<page>)
     if data.startswith("page_"):
         await query.answer()
-        parts = data.split("_")
-        cat_prefix = parts[1]
-        page = int(parts[2])
+        tenant_id = get_tenant_id(user_id)
+        # Format: page_{enc_cat}_{page} — split from right to handle encoded underscores
+        rest = data[5:]  # remove "page_"
+        enc_cat, page_str = rest.rsplit("_", 1)
+        cat_prefix = _dec(enc_cat)
+        page = int(page_str)
         reply_markup, full_cat_name = build_products_keyboard(
-            cat_prefix, page=page)
+            cat_prefix, page=page, tenant_id=tenant_id)
         text = build_cart_text_from_memory(
             context, f"📦 *Kategori: {full_cat_name}*\n\nPilih produk:")
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
         return
 
-    # Handle add item (add_<product_id>_<category_prefix>_<page>) — IN-MEMORY, no DB hit!
+    # Handle add item (add_<product_id>_<encoded_category>_<page>) — IN-MEMORY, no DB hit!
     if data.startswith("add_"):
-        parts = data.split("_")
-        product_id = int(parts[1])
-        cat_prefix = parts[2]
-        page = int(parts[3])
+        tenant_id = get_tenant_id(user_id)
+        # Format: add_{product_id}_{enc_cat}_{page} — split from right
+        rest = data[4:]  # remove "add_"
+        product_id_str, enc_cat, page_str = rest.rsplit("_", 2)
+        product_id = int(product_id_str)
+        cat_prefix = _dec(enc_cat)
+        page = int(page_str)
 
         # Update in-memory cart (instant!)
         add_to_memory_cart(context, product_id)
 
         # Quick feedback via callback answer
-        _refresh_cache_if_needed()
-        product_name = _product_cache.get(product_id, {}).get("item_name", "")
+        _refresh_cache_if_needed(tenant_id)
+        products = _product_cache.get(tenant_id or 0, {})
+        product_name = products.get(product_id, {}).get("item_name", "")
         await query.answer(f"➕ {product_name}")
 
         reply_markup, full_cat_name = build_products_keyboard(
-            cat_prefix, page=page)
+            cat_prefix, page=page, tenant_id=tenant_id)
         text = build_cart_text_from_memory(
             context, f"📦 *Kategori: {full_cat_name}*\n\nPilih produk:")
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
         return
 
-    # Handle remove item (rem_<product_id>_<category_prefix>_<page>) — IN-MEMORY, no DB hit!
+    # Handle remove item (rem_<product_id>_<encoded_category>_<page>) — IN-MEMORY, no DB hit!
     if data.startswith("rem_"):
-        parts = data.split("_")
-        product_id = int(parts[1])
-        cat_prefix = parts[2]
-        page = int(parts[3])
+        tenant_id = get_tenant_id(user_id)
+        # Format: rem_{product_id}_{enc_cat}_{page} — split from right
+        rest = data[4:]  # remove "rem_"
+        product_id_str, enc_cat, page_str = rest.rsplit("_", 2)
+        product_id = int(product_id_str)
+        cat_prefix = _dec(enc_cat)
+        page = int(page_str)
 
         # Update in-memory cart (instant!)
         remove_from_memory_cart(context, product_id)
 
-        _refresh_cache_if_needed()
-        product_name = _product_cache.get(product_id, {}).get("item_name", "")
+        _refresh_cache_if_needed(tenant_id)
+        products = _product_cache.get(tenant_id or 0, {})
+        product_name = products.get(product_id, {}).get("item_name", "")
         await query.answer(f"➖ {product_name}")
 
         reply_markup, full_cat_name = build_products_keyboard(
-            cat_prefix, page=page)
+            cat_prefix, page=page, tenant_id=tenant_id)
         text = build_cart_text_from_memory(
             context, f"📦 *Kategori: {full_cat_name}*\n\nPilih produk:")
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
@@ -1119,8 +1171,8 @@ async def post_init(application):
     except Exception as e:
         logger.warning("Failed to set menu button (non-fatal): %s", e)
     
-    # Pre-load product cache at startup
-    _refresh_cache_if_needed()
+    # Pre-load product cache at startup (demo tenant)
+    _refresh_cache_if_needed(0)
 
 
 # --- Main Entry Point ---
@@ -1136,6 +1188,7 @@ if __name__ == "__main__":
 
     # Order matters: more specific first
     app.add_handler(get_stock_handler())          # /stock menu (stk_menu)
+    app.add_handler(get_product_handler())        # /produk menu
     app.add_handler(get_owner_handler())          # /panel
     app.add_handler(get_admin_conv_handler())     # /promo
     app.add_handler(get_admin_schedule_handler()) # /jadwal

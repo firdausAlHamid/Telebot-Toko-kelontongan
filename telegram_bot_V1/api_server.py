@@ -265,9 +265,12 @@ async def mini_dashboard(request: Request):
         tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
         store_name = tenant.store_name if tenant else None
 
-    # Stock overview (total products, low stock count)
-    total_products = db.query(Product).count()
-    low_stock = db.query(Product).filter((Product.stock <= Product.min_stock) | (Product.stock == 0)).count()
+    # Stock overview (total products, low stock count) - tenant-scoped
+    total_products = db.query(Product).filter(Product.tenant_id == tenant_id).count()
+    low_stock = db.query(Product).filter(
+        (Product.stock <= Product.min_stock) | (Product.stock == 0),
+        Product.tenant_id == tenant_id
+    ).count()
 
     db.close()
 
@@ -298,7 +301,10 @@ async def mini_stock_summary(request: Request):
         raise HTTPException(status_code=403, detail="User belum terdaftar.")
 
     db = SessionLocal()
-    summary = db.query(Product.category, func.sum(Product.stock)).group_by(Product.category).all()
+    tenant_id = bot_user.tenant_id
+    summary = db.query(Product.category, func.sum(Product.stock)).filter(
+        Product.tenant_id == tenant_id
+    ).group_by(Product.category).all()
     db.close()
 
     return [{"category": s[0], "total_stock": int(s[1] or 0)} for s in summary]
@@ -338,7 +344,11 @@ async def mini_consignment(request: Request):
         raise HTTPException(status_code=403, detail="User belum terdaftar.")
 
     db = SessionLocal()
-    items = db.query(Product).filter(Product.is_consignment == True).all()
+    tenant_id = bot_user.tenant_id
+    items = db.query(Product).filter(
+        Product.is_consignment == True,
+        Product.tenant_id == tenant_id
+    ).all()
     db.close()
 
     return [{

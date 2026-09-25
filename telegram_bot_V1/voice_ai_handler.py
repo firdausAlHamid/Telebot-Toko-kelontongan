@@ -24,7 +24,7 @@ from config import (
     OPENROUTER_API_KEY, GROQ_API_KEY,
     GROQ_TRANSCRIPTION_MODEL, OPENROUTER_CHAT_MODEL
 )
-from auth import is_kasir
+from auth import is_kasir, get_tenant_id
 from database import SessionLocal, Product, Promotion, StoreSchedule
 from promotion_service import (
     create_promotion, list_promotions, delete_promotion, format_date_indo
@@ -33,22 +33,49 @@ from schedule_service import create_schedule, list_schedules, delete_schedule
 
 logger = logging.getLogger(__name__)
 
+
+def _invalidate_cache_safe(tenant_id=None):
+    """Invalidate main.py product cache without circular import."""
+    try:
+        import main as _main
+        if hasattr(_main, "invalidate_product_cache"):
+            _main.invalidate_product_cache(tenant_id)
+    except Exception:
+        pass
+
 # =============================================================================
-# API CLIENTS SETUP
+# API CLIENTS SETUP (Lazy initialization)
 # =============================================================================
 
-openrouter_client = AsyncOpenAI(
-    base_url="https://openrouter.ai/api/v1",
-    api_key=OPENROUTER_API_KEY,
-)
+_openrouter_client = None
+_groq_client = None
 
-groq_client = AsyncOpenAI(
-    base_url="https://api.groq.com/openai/v1",
-    api_key=GROQ_API_KEY,
-)
 
-def get_system_prompt():
-    """Generate the system prompt dynamically with the current product catalog."""
+def _get_openrouter_client():
+    global _openrouter_client
+    if _openrouter_client is None:
+        if not OPENROUTER_API_KEY:
+            raise RuntimeError("OPENROUTER_API_KEY not configured")
+        _openrouter_client = AsyncOpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=OPENROUTER_API_KEY,
+        )
+    return _openrouter_client
+
+
+def _get_groq_client():
+    global _groq_client
+    if _groq_client is None:
+        if not GROQ_API_KEY:
+            raise RuntimeError("GROQ_API_KEY not configured")
+        _groq_client = AsyncOpenAI(
+            base_url="https://api.groq.com/openai/v1",
+            api_key=GROQ_API_KEY,
+        )
+    return _groq_client
+
+def get_system_prompt(tenant_id=None):
+    """Generate the system prompt dynamically with the current product catalog and categories."""
     base_prompt = """Kamu adalah asisten AI untuk Toko Kelontong. Tugasmu adalah mendengarkan perintah suara dari admin dan mengekstrak intent (niat) serta parameter yang relevan.
 
 Kamu HARUS membalas dalam format JSON yang valid (tanpa markdown, tanpa backtick, hanya pure JSON).
@@ -59,7 +86,6 @@ Daftar intent yang tersedia:
 
 2. "tambah_produk" — menambah produk baru
    Parameters: {"nama_produk": "...", "kategori": "...", "subkategori": "...", "harga": angka}
-   Kategori yang tersedia: "Sembako & Bahan Pokok", "Mie & Makanan Instan", "Bumbu & Bahan Dapur", "Minuman & Susu", "Camilan & Jajanan", "Perawatan Tubuh", "Kebersihan Rumah Tangga", "Kebutuhan Harian Lainnya"
 
 3. "hapus_produk" — menghapus produk
    Parameters: {"nama_produk": "..."}
@@ -97,12 +123,20 @@ PENTING:
 
 DAFTAR PRODUK SAAT INI DI DATABASE (Sebagai referensi pencocokan):
 """
-    # Fetch all product names to give AI context
+    # Fetch all product names and categories to give AI context
     db = SessionLocal()
-    products = db.query(Product.item_name).all()
+    products = db.query(Product).filter(Product.tenant_id == tenant_id).all()
+    categories = db.query(Product.category).filter(Product.tenant_id == tenant_id).distinct().all()
     db.close()
     
-    product_names = [p[0] for p in products]
+    # Add available categories to prompt
+    category_names = [cat[0] for cat in categories]
+    if category_names:
+        base_prompt += f"   Kategori yang tersedia: {', '.join(category_names)}\n\n"
+    else:
+        base_prompt += "   Kategori yang tersedia: (belum ada kategori)\n\n"
+    
+    product_names = [p.item_name for p in products]
     if product_names:
         base_prompt += "\n".join(f"- {name}" for name in product_names)
     else:
@@ -124,22 +158,22 @@ async def _transcribe_audio(audio_bytes: bytes) -> str:
     audio_file = io.BytesIO(audio_bytes)
     audio_file.name = "voice.ogg"
 
-    transcript = await groq_client.audio.transcriptions.create(
+    transcript = await _get_groq_client().audio.transcriptions.create(
         model=GROQ_TRANSCRIPTION_MODEL,
         file=audio_file,
     )
     return transcript.text.strip()
 
 
-async def _parse_intent(text: str) -> dict:
+async def _parse_intent(text: str, tenant_id=None) -> dict:
     """
     Step 2: Send transcribed text to OpenRouter chat for intent classification.
     Uses gemini-2.5-flash for cheap & optimal JSON parsing.
     Returns a dict with 'intent' and 'parameters' keys.
     """
-    system_prompt = get_system_prompt()
+    system_prompt = get_system_prompt(tenant_id)
 
-    response = await openrouter_client.chat.completions.create(
+    response = await _get_openrouter_client().chat.completions.create(
         model=OPENROUTER_CHAT_MODEL,
         messages=[
             {"role": "system", "content": system_prompt},
@@ -160,7 +194,7 @@ async def _parse_intent(text: str) -> dict:
     return json.loads(raw_text)
 
 
-async def transcribe_and_parse(audio_bytes: bytes) -> dict:
+async def transcribe_and_parse(audio_bytes: bytes, tenant_id=None) -> dict:
     """
     2-step pipeline:
       1. Transcribe audio → text (via Groq Whisper API)
@@ -180,7 +214,7 @@ async def transcribe_and_parse(audio_bytes: bytes) -> dict:
             }
 
         # Step 2: Intent Classification via OpenRouter
-        result = await _parse_intent(transcribed_text)
+        result = await _parse_intent(transcribed_text, tenant_id)
         return result
 
     except json.JSONDecodeError as e:
@@ -203,7 +237,7 @@ async def transcribe_and_parse(audio_bytes: bytes) -> dict:
 # PRODUCT SEARCH HELPER (Fuzzy Match)
 # =============================================================================
 
-def find_product_by_name(name: str):
+def find_product_by_name(name: str, tenant_id=None):
     """
     Find a product by name using case-insensitive exact matching,
     followed by difflib fuzzy matching for high accuracy with typos.
@@ -216,12 +250,13 @@ def find_product_by_name(name: str):
 
     # Try exact match first (case-insensitive)
     product = db.query(Product).filter(
-        Product.item_name.ilike(f"%{name}%")
+        Product.item_name.ilike(f"%{name}%"),
+        Product.tenant_id == tenant_id
     ).first()
 
     if not product:
         # Fetch all product names and do a smarter fuzzy match
-        all_products = db.query(Product).all()
+        all_products = db.query(Product).filter(Product.tenant_id == tenant_id).all()
         all_names = {p.item_name.lower(): p for p in all_products}
         
         # Get closest matches (cutoff 0.6 = 60% similarity)
@@ -235,14 +270,15 @@ def find_product_by_name(name: str):
     return product
 
 
-def find_products_by_name(name: str, limit=10):
+def find_products_by_name(name: str, tenant_id=None, limit=10):
     """
     Find multiple products by name using case-insensitive LIKE matching.
     Returns list of Product objects.
     """
     db = SessionLocal()
     products = db.query(Product).filter(
-        Product.item_name.ilike(f"%{name}%")
+        Product.item_name.ilike(f"%{name}%"),
+        Product.tenant_id == tenant_id
     ).limit(limit).all()
     db.close()
     return products
@@ -252,7 +288,7 @@ def find_products_by_name(name: str, limit=10):
 # CRUD EXECUTION FUNCTIONS
 # =============================================================================
 
-def do_ubah_harga(params: dict) -> str:
+def do_ubah_harga(params: dict, tenant_id=None) -> str:
     """Change product price."""
     nama = params.get("nama_produk", "")
     harga_baru = params.get("harga_baru")
@@ -268,16 +304,18 @@ def do_ubah_harga(params: dict) -> str:
     if harga_baru <= 0:
         return "❌ Harga harus lebih dari 0."
 
-    product = find_product_by_name(nama)
+    product = find_product_by_name(nama, tenant_id)
     if not product:
         return f"❌ Produk '{nama}' tidak ditemukan."
 
     db = SessionLocal()
-    p = db.query(Product).filter(Product.id == product.id).first()
+    p = db.query(Product).filter(Product.id == product.id, Product.tenant_id == tenant_id).first()
     old_price = p.price
     p.price = harga_baru
     db.commit()
     db.close()
+    
+    _invalidate_cache_safe(tenant_id)
 
     return (
         f"✅ *Harga berhasil diubah!*\n\n"
@@ -287,7 +325,7 @@ def do_ubah_harga(params: dict) -> str:
     )
 
 
-def do_tambah_produk(params: dict) -> str:
+def do_tambah_produk(params: dict, tenant_id=None) -> str:
     """Add new product."""
     nama = params.get("nama_produk", "")
     kategori = params.get("kategori", "")
@@ -306,14 +344,14 @@ def do_tambah_produk(params: dict) -> str:
         return "❌ Harga harus lebih dari 0."
 
     # Check if product already exists
-    existing = find_product_by_name(nama)
+    existing = find_product_by_name(nama, tenant_id)
     if existing and existing.item_name.lower() == nama.lower():
         return f"❌ Produk '{nama}' sudah ada dengan harga Rp{existing.price:,}."
 
     db = SessionLocal()
 
     # Get the next ID
-    max_id = db.query(Product.id).order_by(Product.id.desc()).first()
+    max_id = db.query(Product.id).filter(Product.tenant_id == tenant_id).order_by(Product.id.desc()).first()
     new_id = (max_id[0] + 1) if max_id else 1
 
     new_product = Product(
@@ -322,10 +360,13 @@ def do_tambah_produk(params: dict) -> str:
         subcategory=subkategori,
         item_name=nama,
         price=harga,
+        tenant_id=tenant_id,  # Assign to tenant
     )
     db.add(new_product)
     db.commit()
     db.close()
+    
+    _invalidate_cache_safe(tenant_id)
 
     return (
         f"✅ *Produk baru berhasil ditambahkan!*\n\n"
@@ -337,14 +378,14 @@ def do_tambah_produk(params: dict) -> str:
     )
 
 
-def do_hapus_produk(params: dict) -> str:
+def do_hapus_produk(params: dict, tenant_id=None) -> str:
     """Delete product (hard delete)."""
     nama = params.get("nama_produk", "")
 
     if not nama:
         return "❌ Sebutkan nama produk yang ingin dihapus."
 
-    product = find_product_by_name(nama)
+    product = find_product_by_name(nama, tenant_id)
     if not product:
         return f"❌ Produk '{nama}' tidak ditemukan."
 
@@ -356,9 +397,11 @@ def do_hapus_produk(params: dict) -> str:
     db.query(Promotion).filter(Promotion.product_id == product_id).update(
         {"is_active": False}
     )
-    db.query(Product).filter(Product.id == product_id).delete()
+    db.query(Product).filter(Product.id == product_id, Product.tenant_id == tenant_id).delete()
     db.commit()
     db.close()
+    
+    _invalidate_cache_safe(tenant_id)
 
     return (
         f"✅ *Produk berhasil dihapus!*\n\n"
@@ -504,7 +547,7 @@ def do_ubah_jadwal(params: dict) -> str:
     )
 
 
-def do_list_produk(params: dict) -> str:
+def do_list_produk(params: dict, tenant_id=None) -> str:
     """List products, optionally filtered by category."""
     kategori = params.get("kategori")
 
@@ -512,10 +555,13 @@ def do_list_produk(params: dict) -> str:
 
     if kategori:
         products = db.query(Product).filter(
-            Product.category.ilike(f"%{kategori}%")
+            Product.category.ilike(f"%{kategori}%"),
+            Product.tenant_id == tenant_id
         ).order_by(Product.category, Product.item_name).all()
     else:
-        products = db.query(Product).order_by(
+        products = db.query(Product).filter(
+            Product.tenant_id == tenant_id
+        ).order_by(
             Product.category, Product.item_name
         ).limit(30).all()
 
@@ -889,12 +935,15 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         audio_bytes = bytes(audio_bytearray)
 
         logger.info(
-            f"Voice note received from @{username}: "
+            f"Voice note received from {user.username}: "
             f"{voice.duration}s, {len(audio_bytes)} bytes"
         )
 
-        # Send to Gemini for transcription and intent parsing
-        parsed = await transcribe_and_parse(audio_bytes)
+        # Get tenant_id for multi-tenant filtering
+        tenant_id = get_tenant_id(user.id)
+
+        # Send to OpenRouter for transcription and intent parsing
+        parsed = await transcribe_and_parse(audio_bytes, tenant_id)
         await process_parsed_intent(parsed, processing_msg, context)
 
     except Exception as e:

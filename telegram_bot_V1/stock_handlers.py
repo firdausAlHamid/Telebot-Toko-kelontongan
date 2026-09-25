@@ -46,10 +46,10 @@ PER_PAGE = 8
 # UTILITY — build keyboards
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _categories_keyboard(prefix: str, page: int = 1):
+def _categories_keyboard(prefix: str, page: int = 1, tenant_id=None):
     """Build a paginated category keyboard with callback prefix."""
     db = SessionLocal()
-    cats = db.query(Product.category).distinct().order_by(Product.category).all()
+    cats = db.query(Product.category).filter(Product.tenant_id == tenant_id).distinct().order_by(Product.category).all()
     db.close()
     cats = [c[0] for c in cats if c[0]]
 
@@ -81,15 +81,19 @@ def _categories_keyboard(prefix: str, page: int = 1):
     return InlineKeyboardMarkup(keyboard)
 
 
-def _products_keyboard(prefix: str, category_short: str, page: int = 1, show_stock: bool = True):
+def _products_keyboard(prefix: str, category_short: str, page: int = 1, show_stock: bool = True, tenant_id=None):
     """Build a paginated product keyboard for a category."""
     db = SessionLocal()
     category = db.query(Product.category).filter(
-        Product.category.like(f"{category_short}%")
+        Product.category.like(f"{category_short}%"),
+        Product.tenant_id == tenant_id
     ).first()
     full_cat = category[0] if category else category_short
 
-    q = db.query(Product).filter(Product.category == full_cat).order_by(Product.item_name)
+    q = db.query(Product).filter(
+        Product.category == full_cat,
+        Product.tenant_id == tenant_id
+    ).order_by(Product.item_name)
     total = q.count()
     total_pages = max(1, math.ceil(total / PER_PAGE))
     page = min(page, total_pages)
@@ -158,7 +162,8 @@ async def stock_menu_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def stock_in_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    kb = _categories_keyboard("sin")
+    tenant_id = get_tenant_id(query.effective_user.id)
+    kb = _categories_keyboard("sin", tenant_id=tenant_id)
     await query.edit_message_text(
         "📥 *Barang Masuk*\n\nPilih kategori produk:",
         reply_markup=kb, parse_mode="Markdown"
@@ -169,17 +174,18 @@ async def stock_in_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def stock_in_cat_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    tenant_id = get_tenant_id(query.effective_user.id)
     data = query.data
 
     if data.startswith("sin_page_"):
         page = int(data.split("_")[-1])
-        kb = _categories_keyboard("sin", page)
+        kb = _categories_keyboard("sin", page, tenant_id=tenant_id)
         await query.edit_message_text("📥 *Barang Masuk*\n\nPilih kategori:", reply_markup=kb, parse_mode="Markdown")
         return STOCK_IN_CAT
 
     cat_short = data[4:]  # strip "sin_"
     context.user_data["stk_cat"] = cat_short
-    kb, full_cat = _products_keyboard("sin", cat_short)
+    kb, full_cat = _products_keyboard("sin", cat_short, tenant_id=tenant_id)
     await query.edit_message_text(
         f"📥 *Barang Masuk — {full_cat}*\n\nPilih produk:",
         reply_markup=kb, parse_mode="Markdown"
@@ -193,15 +199,17 @@ async def stock_in_product_select(update: Update, context: ContextTypes.DEFAULT_
     data = query.data
 
     if data == "sin_back":
-        kb = _categories_keyboard("sin")
+        tenant_id = get_tenant_id(query.effective_user.id)
+        kb = _categories_keyboard("sin", tenant_id=tenant_id)
         await query.edit_message_text("📥 *Barang Masuk*\n\nPilih kategori:", reply_markup=kb, parse_mode="Markdown")
         return STOCK_IN_CAT
 
     if "_pg_" in data:
+        tenant_id = get_tenant_id(query.effective_user.id)
         parts = data.replace("sin_", "").split("_pg_")
         cat_short = parts[0]
         page = int(parts[1])
-        kb, full_cat = _products_keyboard("sin", cat_short, page)
+        kb, full_cat = _products_keyboard("sin", cat_short, page, tenant_id=tenant_id)
         await query.edit_message_text(
             f"📥 *Barang Masuk — {full_cat}*\n\nPilih produk:",
             reply_markup=kb, parse_mode="Markdown"
@@ -283,7 +291,8 @@ async def stock_in_qty(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def stock_out_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    kb = _categories_keyboard("sout")
+    tenant_id = get_tenant_id(query.effective_user.id)
+    kb = _categories_keyboard("sout", tenant_id=tenant_id)
     await query.edit_message_text(
         "📤 *Barang Keluar*\n\nPilih kategori produk:",
         reply_markup=kb, parse_mode="Markdown"
@@ -294,17 +303,18 @@ async def stock_out_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def stock_out_cat_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    tenant_id = get_tenant_id(query.effective_user.id)
     data = query.data
 
     if data.startswith("sout_page_"):
         page = int(data.split("_")[-1])
-        kb = _categories_keyboard("sout", page)
+        kb = _categories_keyboard("sout", page, tenant_id=tenant_id)
         await query.edit_message_text("📤 *Barang Keluar*\n\nPilih kategori:", reply_markup=kb, parse_mode="Markdown")
         return STOCK_OUT_CAT
 
     cat_short = data[5:]  # strip "sout_"
     context.user_data["stk_cat"] = cat_short
-    kb, full_cat = _products_keyboard("sout", cat_short)
+    kb, full_cat = _products_keyboard("sout", cat_short, tenant_id=tenant_id)
     await query.edit_message_text(
         f"📤 *Barang Keluar — {full_cat}*\n\nPilih produk:",
         reply_markup=kb, parse_mode="Markdown"
@@ -318,15 +328,17 @@ async def stock_out_product_select(update: Update, context: ContextTypes.DEFAULT
     data = query.data
 
     if data == "sout_back":
-        kb = _categories_keyboard("sout")
+        tenant_id = get_tenant_id(query.effective_user.id)
+        kb = _categories_keyboard("sout", tenant_id=tenant_id)
         await query.edit_message_text("📤 *Barang Keluar*\n\nPilih kategori:", reply_markup=kb, parse_mode="Markdown")
         return STOCK_OUT_CAT
 
     if "_pg_" in data:
+        tenant_id = get_tenant_id(query.effective_user.id)
         parts = data.replace("sout_", "").split("_pg_")
         cat_short = parts[0]
         page = int(parts[1])
-        kb, full_cat = _products_keyboard("sout", cat_short, page)
+        kb, full_cat = _products_keyboard("sout", cat_short, page, tenant_id=tenant_id)
         await query.edit_message_text(
             f"📤 *Barang Keluar — {full_cat}*\n\nPilih produk:",
             reply_markup=kb, parse_mode="Markdown"
@@ -412,7 +424,8 @@ async def stock_out_qty(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def stock_view_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    kb = _categories_keyboard("sview")
+    tenant_id = get_tenant_id(query.effective_user.id)
+    kb = _categories_keyboard("sview", tenant_id=tenant_id)
     await query.edit_message_text(
         "📋 *Lihat Stok*\n\nPilih kategori:",
         reply_markup=kb, parse_mode="Markdown"
@@ -423,11 +436,12 @@ async def stock_view_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def stock_view_cat_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    tenant_id = get_tenant_id(query.effective_user.id)
     data = query.data
 
     if data.startswith("sview_page_"):
         page = int(data.split("_")[-1])
-        kb = _categories_keyboard("sview", page)
+        kb = _categories_keyboard("sview", page, tenant_id=tenant_id)
         await query.edit_message_text("📋 *Lihat Stok*\n\nPilih kategori:", reply_markup=kb, parse_mode="Markdown")
         return STOCK_VIEW_CAT
 
@@ -440,14 +454,17 @@ async def stock_view_cat_select(update: Update, context: ContextTypes.DEFAULT_TY
         return STOCK_MENU
 
     cat_short = data[6:]  # strip "sview_"
+    tenant_id = get_tenant_id(query.effective_user.id)
 
     db = SessionLocal()
     category = db.query(Product.category).filter(
-        Product.category.like(f"{cat_short}%")
+        Product.category.like(f"{cat_short}%"),
+        Product.tenant_id == tenant_id
     ).first()
     full_cat = category[0] if category else cat_short
     products = db.query(Product).filter(
-        Product.category == full_cat
+        Product.category == full_cat,
+        Product.tenant_id == tenant_id
     ).order_by(Product.item_name).all()
     db.close()
 
@@ -476,10 +493,12 @@ async def stock_low_alert(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
+    tenant_id = get_tenant_id(query.effective_user.id)
     db = SessionLocal()
     # Products with stock <= min_stock (and min_stock > 0) OR stock == 0
     low_products = db.query(Product).filter(
-        (Product.stock <= Product.min_stock) | (Product.stock == 0)
+        (Product.stock <= Product.min_stock) | (Product.stock == 0),
+        Product.tenant_id == tenant_id
     ).order_by(Product.category, Product.item_name).all()
     db.close()
 
@@ -516,7 +535,8 @@ async def consign_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return STOCK_MENU
 
-    kb = _categories_keyboard("scon")
+    tenant_id = get_tenant_id(query.effective_user.id)
+    kb = _categories_keyboard("scon", tenant_id=tenant_id)
     await query.edit_message_text(
         "🤝 *Konsinyasi / Titipan*\n\nPilih kategori produk:",
         reply_markup=kb, parse_mode="Markdown"
@@ -527,17 +547,18 @@ async def consign_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def consign_cat_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    tenant_id = get_tenant_id(query.effective_user.id)
     data = query.data
 
     if data.startswith("scon_page_"):
         page = int(data.split("_")[-1])
-        kb = _categories_keyboard("scon", page)
+        kb = _categories_keyboard("scon", page, tenant_id=tenant_id)
         await query.edit_message_text("🤝 *Konsinyasi*\n\nPilih kategori:", reply_markup=kb, parse_mode="Markdown")
         return CONSIGN_CAT
 
     cat_short = data[5:]  # strip "scon_"
     context.user_data["stk_cat"] = cat_short
-    kb, full_cat = _products_keyboard("scon", cat_short, show_stock=False)
+    kb, full_cat = _products_keyboard("scon", cat_short, show_stock=False, tenant_id=tenant_id)
     await query.edit_message_text(
         f"🤝 *Konsinyasi — {full_cat}*\n\nPilih produk:",
         reply_markup=kb, parse_mode="Markdown"
@@ -551,15 +572,17 @@ async def consign_product_select(update: Update, context: ContextTypes.DEFAULT_T
     data = query.data
 
     if data == "scon_back":
-        kb = _categories_keyboard("scon")
+        tenant_id = get_tenant_id(query.effective_user.id)
+        kb = _categories_keyboard("scon", tenant_id=tenant_id)
         await query.edit_message_text("🤝 *Konsinyasi*\n\nPilih kategori:", reply_markup=kb, parse_mode="Markdown")
         return CONSIGN_CAT
 
     if "_pg_" in data:
+        tenant_id = get_tenant_id(query.effective_user.id)
         parts = data.replace("scon_", "").split("_pg_")
         cat_short = parts[0]
         page = int(parts[1])
-        kb, full_cat = _products_keyboard("scon", cat_short, page, show_stock=False)
+        kb, full_cat = _products_keyboard("scon", cat_short, page, show_stock=False, tenant_id=tenant_id)
         await query.edit_message_text(
             f"🤝 *Konsinyasi — {full_cat}*\n\nPilih produk:",
             reply_markup=kb, parse_mode="Markdown"

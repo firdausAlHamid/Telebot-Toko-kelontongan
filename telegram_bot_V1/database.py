@@ -90,6 +90,9 @@ class Product(Base):
     item_name = Column(String(255))
     price = Column(Integer)
 
+    # --- Multi-Tenant Support ---
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=True, index=True)  # NULL = global/demo, otherwise tenant-scoped
+
     # --- Stock Management ---
     stock = Column(Integer, default=0)                            # current stock count
     min_stock = Column(Integer, default=0)                        # minimum stock alert threshold
@@ -204,3 +207,5 @@ SessionLocal = sessionmaker(bind=engine)
 
 # Create the table schema if it doesn't exist yet
 Base.metadata.create_all(engine)
+
+# https://api.atria-asi.ai/v1
