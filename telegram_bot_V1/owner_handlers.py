@@ -19,6 +19,7 @@ from telegram.ext import (
 )
 
 from auth import is_owner, generate_kasir_token, list_kasir_for_owner, deactivate_user, get_store_name
+from menu_callbacks import fallback_main_transaksi_end_conv
 from database import SessionLocal, BotUser, Tenant
 
 # ── Try to import config ───────────────────────────────────────────────────────
@@ -311,6 +312,9 @@ def get_owner_handler() -> ConversationHandler:
             ],
         },
         fallbacks=[
+            CallbackQueryHandler(
+                fallback_main_transaksi_end_conv, pattern="^main_transaksi$"
+            ),
             CommandHandler("cancel", lambda u, c: ConversationHandler.END),
             CommandHandler("panel", panel_command),
         ],

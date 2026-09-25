@@ -21,6 +21,7 @@ from telegram.ext import (
 
 from database import SessionLocal, Product, StockMovement
 from auth import is_kasir, is_owner, get_tenant_id
+from menu_callbacks import fallback_main_transaksi_end_conv
 
 logger = logging.getLogger(__name__)
 
@@ -765,6 +766,9 @@ def get_stock_handler():
             ],
         },
         fallbacks=[
+            CallbackQueryHandler(
+                fallback_main_transaksi_end_conv, pattern="^main_transaksi$"
+            ),
             CallbackQueryHandler(main_menu_return, pattern="^main_menu$"),
             CommandHandler("cancel", lambda u, c: ConversationHandler.END),
             CommandHandler("stok", stock_menu_entry),

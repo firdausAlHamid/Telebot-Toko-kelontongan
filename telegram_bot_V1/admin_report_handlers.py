@@ -14,6 +14,7 @@ from telegram.ext import (
 )
 
 from auth import is_kasir, is_owner
+from menu_callbacks import fallback_main_transaksi_end_conv
 from transaction_service import (
     get_daily_summary, get_period_summary, get_top_products,
     get_transaction_history, get_transaction_detail,
@@ -424,6 +425,9 @@ def get_report_conv_handler():
             ],
         },
         fallbacks=[
+            CallbackQueryHandler(
+                fallback_main_transaksi_end_conv, pattern="^main_transaksi$"
+            ),
             CommandHandler("cancel", lambda u, c: ConversationHandler.END),
             CommandHandler("laporan", laporan_command),
         ],
@@ -449,6 +453,9 @@ def get_void_conv_handler():
             ],
         },
         fallbacks=[
+            CallbackQueryHandler(
+                fallback_main_transaksi_end_conv, pattern="^main_transaksi$"
+            ),
             CommandHandler("cancel", void_cancel_command),
             CommandHandler("void", void_command),
         ],

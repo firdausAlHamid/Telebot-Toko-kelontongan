@@ -14,6 +14,7 @@ from telegram.ext import (
 )
 
 from auth import is_kasir as _is_kasir
+from menu_callbacks import fallback_main_transaksi_end_conv
 from database import SessionLocal, Product
 from promotion_service import (
     create_promotion, list_promotions, delete_promotion,
@@ -927,6 +928,9 @@ def get_admin_conv_handler():
             ],
         },
         fallbacks=[
+            CallbackQueryHandler(
+                fallback_main_transaksi_end_conv, pattern="^main_transaksi$"
+            ),
             CommandHandler("cancel", cancel_command),
             CommandHandler("promo", promo_menu_command),
         ],

@@ -13,6 +13,7 @@ from telegram.ext import (
 )
 
 from auth import is_kasir as _is_kasir
+from menu_callbacks import fallback_main_transaksi_end_conv
 from schedule_service import (
     create_schedule, list_schedules, delete_schedule, update_schedule
 )
@@ -429,6 +430,9 @@ def get_admin_schedule_handler():
             ],
         },
         fallbacks=[
+            CallbackQueryHandler(
+                fallback_main_transaksi_end_conv, pattern="^main_transaksi$"
+            ),
             CommandHandler("cancel", cancel_command),
             CommandHandler("jadwal", sched_menu_command),
         ],

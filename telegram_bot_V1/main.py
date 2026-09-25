@@ -27,6 +27,7 @@ from schedule_service import get_today_schedule_status, get_upcoming_schedules_r
 from voice_ai_handler import handle_voice, handle_voice_callback, handle_voice_text_correction
 from owner_handlers import get_owner_handler
 from stock_handlers import get_stock_handler
+from menu_callbacks import handle_main_transaksi
 from auth import (
     sync_user_info, is_registered, is_kasir as auth_is_kasir,
     is_owner as auth_is_owner, validate_and_activate_token, get_tenant_id
@@ -527,41 +528,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handler_mulai_inline(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler for the '🛒 Mulai Transaksi' inline button."""
-    query = update.callback_query
-    user_id = update.effective_user.id
-    
-    if query:
-        try:
-            await query.answer()
-        except Exception as e:
-            logger.warning("Could not answer callback query: %s", e)
-
-    try:
-        logger.info("[CALLBACK] 'Mulai Transaksi' triggered by user_id: %s", user_id)
-        if not auth_is_kasir(user_id):
-            if query:
-                await query.edit_message_text("⛔ Kamu belum terdaftar.")
-            return
-
-        ensure_cart_loaded(user_id, context)
-        text = build_cart_text_from_memory(
-            context, "🏪 *Katalog Produk*\n\nSilakan pilih kategori:")
-        reply_markup = build_categories_keyboard()
-        
-        if query:
-            await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
-        else:
-            await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
-    except Exception as exc:
-        logger.error("[ERROR] Exception in handler_mulai_inline: %s", exc, exc_info=True)
-        err_msg = f"⚠️ Terjadi kesalahan saat memuat katalog: {exc}"
-        if query:
-            try:
-                await query.edit_message_text(err_msg)
-            except Exception:
-                await context.bot.send_message(chat_id=update.effective_chat.id, text=err_msg)
-        else:
-            await update.message.reply_text(err_msg)
+    logger.info(
+        "[CALLBACK] 'Mulai Transaksi' triggered by user_id: %s",
+        update.effective_user.id,
+    )
+    await handle_main_transaksi(update, context)
 
 
 async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -569,6 +540,10 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user_id = update.effective_user.id
     data = query.data
+
+    if data == "main_transaksi":
+        await handle_main_transaksi(update, context)
+        return
 
     # Ensure cart is loaded into memory
     ensure_cart_loaded(user_id, context)
@@ -1178,6 +1153,9 @@ if __name__ == "__main__":
     app.add_handler(
         CallbackQueryHandler(handler_mulai_inline, pattern="^main_transaksi$"),
         group=-1,
+    )
+    app.add_handler(
+        CallbackQueryHandler(handler_mulai_inline, pattern="^main_transaksi$"),
     )
 
     app.add_handler(get_stock_handler())          # /stock menu (stk_menu)
