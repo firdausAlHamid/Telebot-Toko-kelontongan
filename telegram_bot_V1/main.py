@@ -528,6 +528,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handler_mulai_inline(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler for the '🛒 Mulai Transaksi' inline button."""
+    query = update.callback_query
+    if query:
+        try:
+            await query.answer()
+        except Exception as exc:
+            logger.warning("Could not answer callback query: %s", exc)
     logger.info(
         "[CALLBACK] 'Mulai Transaksi' triggered by user_id: %s",
         update.effective_user.id,
@@ -1181,5 +1187,15 @@ if __name__ == "__main__":
     # Text catch-all: handles token activation + voice correction + fallback
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
 
+    # Single-instance protection via socket port 65432
+    import socket, sys
+    try:
+        lock_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        lock_socket.bind(("127.0.0.1", 65432))
+    except socket.error:
+        print("⚠️ [PROTECTION] Bot instance IS ALREADY RUNNING! Exiting duplicate process to prevent 409 Conflict.")
+        sys.exit(0)
+
     print("Bot is running...")
-    app.run_polling()
+    app.run_polling(drop_pending_updates=True)
+
