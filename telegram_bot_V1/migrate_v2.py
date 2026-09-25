@@ -106,9 +106,9 @@ def run_migration():
         """)
         print("      ✅ Updated role column type")
 
-        # ── STEP 3: Alter transactions — add tenant_id ─────────────────────
+        # ── STEP 3: Alter transactions & products — add tenant_id ─────────────────
         print()
-        print("[3/5] Altering transactions table...")
+        print("[3/5] Altering transactions & products tables...")
         cursor.execute("""
             SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
             WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'transactions' AND COLUMN_NAME = 'tenant_id'
@@ -121,9 +121,25 @@ def run_migration():
                 ADD CONSTRAINT fk_transactions_tenant
                     FOREIGN KEY (tenant_id) REFERENCES tenants(id);
             """)
-            print("      ✅ Added column: tenant_id (FK to tenants)")
+            print("      ✅ Added column: tenant_id to transactions")
         else:
-            print("      ⏭️  Column tenant_id already exists, skipping.")
+            print("      ⏭️  Column tenant_id in transactions already exists, skipping.")
+
+        cursor.execute("""
+            SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'products' AND COLUMN_NAME = 'tenant_id'
+        """, (DB_CONFIG["database"],))
+        if not cursor.fetchone()[0]:
+            cursor.execute("""
+                ALTER TABLE products
+                ADD COLUMN tenant_id INT NULL DEFAULT 1
+                AFTER price;
+            """)
+            cursor.execute("UPDATE products SET tenant_id = 1 WHERE tenant_id IS NULL;")
+            print("      ✅ Added column: tenant_id to products (default=1 Demo)")
+        else:
+            print("      ⏭️  Column tenant_id in products already exists, skipping.")
+
 
         # ── STEP 4: Create registration_tokens table ───────────────────────
         print()

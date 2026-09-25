@@ -203,7 +203,7 @@ async def transcribe_and_parse(audio_bytes: bytes) -> dict:
 # PRODUCT SEARCH HELPER (Fuzzy Match)
 # =============================================================================
 
-def find_product_by_name(name: str):
+def find_product_by_name(name: str, tenant_id=None):
     """
     Find a product by name using case-insensitive exact matching,
     followed by difflib fuzzy matching for high accuracy with typos.
@@ -214,14 +214,21 @@ def find_product_by_name(name: str):
         
     db = SessionLocal()
 
+    query = db.query(Product)
+    if tenant_id:
+        query = query.filter((Product.tenant_id == tenant_id) | (Product.tenant_id.is_(None)))
+
     # Try exact match first (case-insensitive)
-    product = db.query(Product).filter(
+    product = query.filter(
         Product.item_name.ilike(f"%{name}%")
     ).first()
 
     if not product:
         # Fetch all product names and do a smarter fuzzy match
-        all_products = db.query(Product).all()
+        all_q = db.query(Product)
+        if tenant_id:
+            all_q = all_q.filter((Product.tenant_id == tenant_id) | (Product.tenant_id.is_(None)))
+        all_products = all_q.all()
         all_names = {p.item_name.lower(): p for p in all_products}
         
         # Get closest matches (cutoff 0.6 = 60% similarity)
@@ -233,6 +240,7 @@ def find_product_by_name(name: str):
 
     db.close()
     return product
+
 
 
 def find_products_by_name(name: str, limit=10):
@@ -287,8 +295,8 @@ def do_ubah_harga(params: dict) -> str:
     )
 
 
-def do_tambah_produk(params: dict) -> str:
-    """Add new product."""
+def do_tambah_produk(params: dict, tenant_id=1) -> str:
+    """Add new product for a tenant."""
     nama = params.get("nama_produk", "")
     kategori = params.get("kategori", "")
     subkategori = params.get("subkategori", kategori)
@@ -305,8 +313,8 @@ def do_tambah_produk(params: dict) -> str:
     if harga <= 0:
         return "❌ Harga harus lebih dari 0."
 
-    # Check if product already exists
-    existing = find_product_by_name(nama)
+    # Check if product already exists for this tenant
+    existing = find_product_by_name(nama, tenant_id=tenant_id)
     if existing and existing.item_name.lower() == nama.lower():
         return f"❌ Produk '{nama}' sudah ada dengan harga Rp{existing.price:,}."
 
@@ -322,7 +330,9 @@ def do_tambah_produk(params: dict) -> str:
         subcategory=subkategori,
         item_name=nama,
         price=harga,
+        tenant_id=tenant_id,
     )
+
     db.add(new_product)
     db.commit()
     db.close()
@@ -504,20 +514,23 @@ def do_ubah_jadwal(params: dict) -> str:
     )
 
 
-def do_list_produk(params: dict) -> str:
-    """List products, optionally filtered by category."""
+def do_list_produk(params: dict, tenant_id=1) -> str:
+    """List products for a tenant, optionally filtered by category."""
     kategori = params.get("kategori")
 
     db = SessionLocal()
 
+    q = db.query(Product).filter((Product.tenant_id == tenant_id) | (Product.tenant_id.is_(None)))
+
     if kategori:
-        products = db.query(Product).filter(
+        products = q.filter(
             Product.category.ilike(f"%{kategori}%")
         ).order_by(Product.category, Product.item_name).all()
     else:
-        products = db.query(Product).order_by(
+        products = q.order_by(
             Product.category, Product.item_name
         ).limit(30).all()
+
 
     db.close()
 

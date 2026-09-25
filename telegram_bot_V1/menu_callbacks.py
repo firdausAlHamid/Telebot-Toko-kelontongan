@@ -26,19 +26,26 @@ async def handle_main_transaksi(update: Update, context: ContextTypes.DEFAULT_TY
             logger.warning("Could not answer callback query: %s", exc)
 
     try:
-        from auth import is_kasir as auth_is_kasir
+        from auth import is_kasir as auth_is_kasir, get_tenant_id
 
         if not auth_is_kasir(user_id):
             if query:
                 await query.edit_message_text("⛔ Kamu belum terdaftar.")
             return
 
+        tenant_id = get_tenant_id(user_id) or 1
         main = importlib.import_module("main")
         main.ensure_cart_loaded(user_id, context)
-        text = main.build_cart_text_from_memory(
-            context, "🏪 *Katalog Produk*\n\nSilakan pilih kategori:"
-        )
-        reply_markup = main.build_categories_keyboard()
+
+        categories = main.get_cached_categories(tenant_id=tenant_id)
+        if not categories:
+            text = "🏪 *Katalog Produk Toko*\n\n⚠️ Katalog toko kamu saat ini masih kosong (0 produk).\n\nSilakan tambahkan produk baru melalui:\n▪️ Menu /stok ➔ Tambah Produk\n▪️ Pesan Suara (Voice Note AI)\n▪️ Mini App Web Dashboard"
+            reply_markup = None
+        else:
+            text = main.build_cart_text_from_memory(
+                context, "🏪 *Katalog Produk*\n\nSilakan pilih kategori:"
+            )
+            reply_markup = main.build_categories_keyboard(tenant_id=tenant_id)
 
         if query:
             try:
@@ -50,6 +57,7 @@ async def handle_main_transaksi(update: Update, context: ContextTypes.DEFAULT_TY
                     pass
                 else:
                     raise
+
 
         elif update.message:
             await update.message.reply_text(

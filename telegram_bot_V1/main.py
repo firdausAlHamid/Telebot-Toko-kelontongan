@@ -97,17 +97,32 @@ def invalidate_product_cache():
     _cache_timestamp = 0
 
 
-def get_cached_products_by_category(category, offset=0, limit=5):
-    """Get products from cache filtered by category with pagination."""
-    _refresh_cache_if_needed()
-    all_products = [p for p in _product_cache.values() if p["category"] == category]
-    return all_products[offset:offset + limit], len(all_products)
+def get_cached_products_by_category(category, offset=0, limit=5, tenant_id=1):
+    """Get products filtered by category and tenant_id with pagination."""
+    db = SessionLocal()
+    query = db.query(Product).filter(
+        Product.category == category,
+        (Product.tenant_id == tenant_id) | (Product.tenant_id.is_(None))
+    )
+    total_products = query.count()
+    products = query.offset(offset).limit(limit).all()
+    db.close()
+    p_dicts = [
+        {"id": p.id, "item_name": p.item_name, "price": p.price, "category": p.category}
+        for p in products
+    ]
+    return p_dicts, total_products
 
 
-def get_cached_categories():
-    """Get distinct categories from cache."""
-    _refresh_cache_if_needed()
-    return _category_cache
+def get_cached_categories(tenant_id=1):
+    """Get distinct categories from DB for a specific tenant."""
+    db = SessionLocal()
+    categories = db.query(Product.category).filter(
+        (Product.tenant_id == tenant_id) | (Product.tenant_id.is_(None))
+    ).distinct().all()
+    db.close()
+    return categories
+
 
 
 def get_full_category_name(prefix):
@@ -365,9 +380,9 @@ def build_cash_text(grand_total, cash_data):
     return text
 
 
-def build_categories_keyboard():
-    """Build the inline keyboard for categories (uses cache)."""
-    categories = get_cached_categories()
+def build_categories_keyboard(tenant_id=1):
+    """Build the inline keyboard for categories filtered by tenant_id."""
+    categories = get_cached_categories(tenant_id=tenant_id)
 
     keyboard = []
     # Display 2 categories per row
@@ -388,14 +403,15 @@ def build_categories_keyboard():
     return InlineKeyboardMarkup(keyboard)
 
 
-def build_products_keyboard(category_prefix, page=1):
-    """Build the inline keyboard for products in a category with pagination (uses cache)."""
+def build_products_keyboard(category_prefix, page=1, tenant_id=1):
+    """Build the inline keyboard for products in a category with pagination for a tenant."""
     category = get_full_category_name(category_prefix)
 
     per_page = 5
     offset = (page - 1) * per_page
-    products, total_products = get_cached_products_by_category(category, offset, per_page)
+    products, total_products = get_cached_products_by_category(category, offset, per_page, tenant_id=tenant_id)
     total_pages = math.ceil(total_products / per_page)
+
 
     product_ids = [p["id"] for p in products]
     promos = get_active_promos_for_products(product_ids)

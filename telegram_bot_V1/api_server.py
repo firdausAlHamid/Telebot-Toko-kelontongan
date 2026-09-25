@@ -62,6 +62,8 @@ app.add_middleware(
 class RegisterOwnerRequest(BaseModel):
     store_name: str
     telegram_username: str   # @username without @, for display only
+    account_type: str = "operational"  # "operational" (0 products) or "demo" (210 products)
+
 
 
 class GenerateKasirTokenRequest(BaseModel):
@@ -169,6 +171,25 @@ async def register_owner(req: RegisterOwnerRequest, x_api_secret: str = Header(N
     db.add(tenant)
     db.flush()  # get tenant.id
 
+    # If account_type is 'demo', auto-seed 210 dummy products for this tenant
+    if req.account_type and req.account_type.lower() == "demo":
+        try:
+            from products import master_products
+            for item in master_products:
+                prod = Product(
+                    category=item["category"],
+                    subcategory=item.get("subcategory", ""),
+                    item_name=item["item_name"],
+                    price=item["price"],
+                    tenant_id=tenant.id,
+                    stock=50,
+                    min_stock=5,
+                )
+                db.add(prod)
+            logger.info(f"Seeded 210 demo products for tenant_id={tenant.id}")
+        except Exception as exc:
+            logger.error(f"Failed to seed demo products: {exc}")
+
     token_str = "POS-OWNER-" + secrets.token_hex(4).upper()
     expires = datetime.now() + timedelta(hours=48)
 
@@ -183,6 +204,7 @@ async def register_owner(req: RegisterOwnerRequest, x_api_secret: str = Header(N
     db.commit()
     tenant_id = tenant.id
     db.close()
+
 
     logger.info(f"Owner registration token created: store='{store_name}', token={token_str}")
 

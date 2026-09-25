@@ -90,6 +90,9 @@ class Product(Base):
     item_name = Column(String(255))
     price = Column(Integer)
 
+    # --- Multi-Tenant Support ---
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=True, default=1)
+
     # --- Stock Management ---
     stock = Column(Integer, default=0)                            # current stock count
     min_stock = Column(Integer, default=0)                        # minimum stock alert threshold
@@ -97,6 +100,7 @@ class Product(Base):
     # --- Consignment (Titipan) ---
     is_consignment = Column(Boolean, default=False)               # produk titipan/konsinyasi
     consignment_supplier = Column(String(255), nullable=True)     # nama supplier
+
 
 
 class StockMovement(Base):

@@ -221,7 +221,15 @@
               />
             </div>
           </div>
+          <div class="form-group">
+            <label for="account-type">Jenis Akun Toko</label>
+            <select id="account-type" name="account_type" style="width: 100%; padding: 12px 16px; background: var(--surface2); border: 1px solid var(--border); border-radius: 12px; color: var(--text); font-size: 15px; outline: none;">
+              <option value="operational">🏢 Akun Operasional (Kosongan 0 Produk - Toko Baru)</option>
+              <option value="demo">🧪 Akun Demo (Terisi 210 Produk Dummy - Testing/Dosen)</option>
+            </select>
+          </div>
           <button class="btn" type="submit" id="submit-btn">
+
             <span>🚀 Daftar &amp; Dapat Token</span>
           </button>
         </form>
@@ -289,6 +297,7 @@
 
       const storeName = document.getElementById('store-name').value.trim();
       const tgUsername = document.getElementById('tg-username').value.trim().replace(/^@/, '');
+      const accountType = document.getElementById('account-type').value;
 
       if (!storeName || !tgUsername) return;
 
@@ -302,8 +311,9 @@
             'Content-Type': 'application/json',
             'X-Api-Secret': API_SECRET,
           },
-          body: JSON.stringify({ store_name: storeName, telegram_username: tgUsername }),
+          body: JSON.stringify({ store_name: storeName, telegram_username: tgUsername, account_type: accountType }),
         });
+
 
         const data = await res.json();
 
