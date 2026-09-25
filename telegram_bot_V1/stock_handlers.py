@@ -710,6 +710,7 @@ def get_stock_handler():
     return ConversationHandler(
         entry_points=[
             CallbackQueryHandler(stock_menu_entry, pattern="^stk_menu$"),
+            CommandHandler("stok", stock_menu_entry),
         ],
         states={
             STOCK_MENU: [
@@ -766,6 +767,8 @@ def get_stock_handler():
         fallbacks=[
             CallbackQueryHandler(main_menu_return, pattern="^main_menu$"),
             CommandHandler("cancel", lambda u, c: ConversationHandler.END),
+            CommandHandler("stok", stock_menu_entry),
         ],
+        allow_reentry=True,
         per_message=False,
     )
