@@ -395,6 +395,7 @@ def get_admin_schedule_handler():
     return ConversationHandler(
         entry_points=[
             CommandHandler("jadwal", sched_menu_command),
+            CallbackQueryHandler(sched_menu_command, pattern="^main_jadwal$"),
         ],
         states={
             SCHED_MENU: [
@@ -431,6 +432,7 @@ def get_admin_schedule_handler():
             CommandHandler("cancel", cancel_command),
             CommandHandler("jadwal", sched_menu_command),
         ],
+        allow_reentry=True,
         per_user=True,
         per_chat=True,
     )

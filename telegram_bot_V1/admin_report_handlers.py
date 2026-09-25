@@ -413,6 +413,7 @@ def get_report_conv_handler():
     return ConversationHandler(
         entry_points=[
             CommandHandler("laporan", laporan_command),
+            CallbackQueryHandler(laporan_command, pattern="^main_laporan$"),
         ],
         states={
             REPORT_MENU: [
@@ -426,6 +427,7 @@ def get_report_conv_handler():
             CommandHandler("cancel", lambda u, c: ConversationHandler.END),
             CommandHandler("laporan", laporan_command),
         ],
+        allow_reentry=True,
         per_user=True,
         per_chat=True,
     )

@@ -879,6 +879,7 @@ def get_admin_conv_handler():
     return ConversationHandler(
         entry_points=[
             CommandHandler("promo", promo_menu_command),
+            CallbackQueryHandler(promo_menu_command, pattern="^main_promo$"),
         ],
         states={
             PROMO_MENU: [
@@ -929,6 +930,7 @@ def get_admin_conv_handler():
             CommandHandler("cancel", cancel_command),
             CommandHandler("promo", promo_menu_command),
         ],
+        allow_reentry=True,
         per_user=True,
         per_chat=True,
     )

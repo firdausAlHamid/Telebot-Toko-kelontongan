@@ -292,7 +292,10 @@ async def handle_dashboard_info(update: Update, context: ContextTypes.DEFAULT_TY
 def get_owner_handler() -> ConversationHandler:
     """Build and return the ConversationHandler for /panel."""
     return ConversationHandler(
-        entry_points=[CommandHandler("panel", panel_command)],
+        entry_points=[
+            CommandHandler("panel", panel_command),
+            CallbackQueryHandler(panel_command, pattern="^main_panel$"),
+        ],
         states={
             OWNER_MENU: [
                 CallbackQueryHandler(handle_dashboard_info, pattern="^own_dashboard_info$"),

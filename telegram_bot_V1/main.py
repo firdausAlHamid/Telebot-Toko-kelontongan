@@ -1152,29 +1152,7 @@ if __name__ == "__main__":
     # Main menu inline routes (bridges to the commands)
     app.add_handler(CallbackQueryHandler(handler_mulai_inline, pattern="^main_transaksi$"))
     
-    # Simple bridge for other main menu buttons (treat them as text commands internally)
-    async def bridge_callback(update, context):
-        query = update.callback_query
-        await query.answer()
-        # Not perfect, but we can't easily trigger ConversationHandlers via simple callback 
-        # unless their entry_points accept these patterns. We'll tell the user to use commands.
-        cmd_map = {
-            "main_laporan": "/laporan",
-            "main_promo": "/promo",
-            "main_jadwal": "/jadwal",
-            "main_panel": "/panel"
-        }
-        cmd = cmd_map.get(query.data)
-        if cmd:
-            # Delete old message to clean up inline keyboard
-            await query.delete_message()
-            # Send prompt
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id, 
-                text=f"Untuk menu ini, silakan klik atau ketik: {cmd}"
-            )
 
-    app.add_handler(CallbackQueryHandler(bridge_callback, pattern="^main_(laporan|promo|jadwal|panel)$"))
 
     # Voice confirmation callback handler (must be before generic button_click)
     app.add_handler(CallbackQueryHandler(handle_voice_callback, pattern="^vc_"))
