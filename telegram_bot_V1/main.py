@@ -531,22 +531,37 @@ async def handler_mulai_inline(update: Update, context: ContextTypes.DEFAULT_TYP
     user_id = update.effective_user.id
     
     if query:
-        await query.answer()
+        try:
+            await query.answer()
+        except Exception as e:
+            logger.warning("Could not answer callback query: %s", e)
 
-    if not auth_is_kasir(user_id):
+    try:
+        logger.info("[CALLBACK] 'Mulai Transaksi' triggered by user_id: %s", user_id)
+        if not auth_is_kasir(user_id):
+            if query:
+                await query.edit_message_text("⛔ Kamu belum terdaftar.")
+            return
+
+        ensure_cart_loaded(user_id, context)
+        text = build_cart_text_from_memory(
+            context, "🏪 *Katalog Produk*\n\nSilakan pilih kategori:")
+        reply_markup = build_categories_keyboard()
+        
         if query:
-            await query.edit_message_text("⛔ Kamu belum terdaftar.")
-        return
-
-    ensure_cart_loaded(user_id, context)
-    text = build_cart_text_from_memory(
-        context, "🏪 *Katalog Produk*\n\nSilakan pilih kategori:")
-    reply_markup = build_categories_keyboard()
-    
-    if query:
-        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
-    else:
-        await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+            await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+        else:
+            await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+    except Exception as exc:
+        logger.error("[ERROR] Exception in handler_mulai_inline: %s", exc, exc_info=True)
+        err_msg = f"⚠️ Terjadi kesalahan saat memuat katalog: {exc}"
+        if query:
+            try:
+                await query.edit_message_text(err_msg)
+            except Exception:
+                await context.bot.send_message(chat_id=update.effective_chat.id, text=err_msg)
+        else:
+            await update.message.reply_text(err_msg)
 
 
 async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1128,7 +1143,25 @@ async def post_init(application):
 
 # --- Main Entry Point ---
 
+async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Log errors caused by updates and notify user."""
+    logger.error("Exception while handling an update:", exc_info=context.error)
+    if isinstance(update, Update) and update.effective_chat:
+        try:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=f"⚠️ Terjadi kesalahan pada sistem: {context.error}"
+            )
+        except Exception:
+            pass
+
+
 if __name__ == "__main__":
+    logging.basicConfig(
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        level=logging.INFO
+    )
+
     app = (
         ApplicationBuilder()
         .token(BOT_TOKEN)
@@ -1136,6 +1169,8 @@ if __name__ == "__main__":
         .concurrent_updates(True)    # ⚡ Process multiple callbacks in parallel!
         .build()
     )
+
+    app.add_error_handler(global_error_handler)
 
     # Order matters: more specific first
     app.add_handler(get_stock_handler())          # /stock menu (stk_menu)
@@ -1152,7 +1187,6 @@ if __name__ == "__main__":
     # Main menu inline routes (bridges to the commands)
     app.add_handler(CallbackQueryHandler(handler_mulai_inline, pattern="^main_transaksi$"))
     
-
 
     # Voice confirmation callback handler (must be before generic button_click)
     app.add_handler(CallbackQueryHandler(handle_voice_callback, pattern="^vc_"))
