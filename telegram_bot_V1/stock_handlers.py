@@ -770,5 +770,7 @@ def get_stock_handler():
             CommandHandler("stok", stock_menu_entry),
         ],
         allow_reentry=True,
-        per_message=False,
+        per_user=True,
+        per_chat=True,
+        per_message=True,
     )

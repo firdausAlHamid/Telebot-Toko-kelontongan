@@ -315,5 +315,7 @@ def get_owner_handler() -> ConversationHandler:
             CommandHandler("panel", panel_command),
         ],
         allow_reentry=True,
-        per_message=False,
+        per_user=True,
+        per_chat=True,
+        per_message=True,
     )

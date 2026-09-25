@@ -1172,7 +1172,14 @@ if __name__ == "__main__":
 
     app.add_error_handler(global_error_handler)
 
-    # Order matters: more specific first
+    # Global main-menu callbacks (group -1 = highest priority). Without this,
+    # an active ConversationHandler can claim the CallbackQuery but match no
+    # state handler, leaving Telegram's loading spinner stuck.
+    app.add_handler(
+        CallbackQueryHandler(handler_mulai_inline, pattern="^main_transaksi$"),
+        group=-1,
+    )
+
     app.add_handler(get_stock_handler())          # /stock menu (stk_menu)
     app.add_handler(get_owner_handler())          # /panel
     app.add_handler(get_admin_conv_handler())     # /promo
@@ -1183,10 +1190,6 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("start",    start))
     app.add_handler(CommandHandler("help",     handler_help))
     app.add_handler(CommandHandler("riwayat",  riwayat_command))
-
-    # Main menu inline routes (bridges to the commands)
-    app.add_handler(CallbackQueryHandler(handler_mulai_inline, pattern="^main_transaksi$"))
-    
 
     # Voice confirmation callback handler (must be before generic button_click)
     app.add_handler(CallbackQueryHandler(handle_voice_callback, pattern="^vc_"))
