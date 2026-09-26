@@ -617,6 +617,7 @@ def get_product_handler():
             ADD_CATEGORY: [
                 CallbackQueryHandler(prod_add_category, pattern="^add_cat_"),
                 CallbackQueryHandler(prod_add_product_select, pattern="^add_prod_"),
+                CallbackQueryHandler(product_menu_entry, pattern="^product_menu$"),
                 cancel_cb,
             ],
             ADD_PRICE: [
@@ -625,6 +626,7 @@ def get_product_handler():
             ],
             EDIT_LIST: [
                 CallbackQueryHandler(prod_edit_category, pattern="^edit_cat_"),
+                CallbackQueryHandler(product_menu_entry, pattern="^product_menu$"),
                 cancel_cb,
             ],
             EDIT_SELECT: [
@@ -637,6 +639,7 @@ def get_product_handler():
             ],
             DELETE_LIST: [
                 CallbackQueryHandler(prod_del_category, pattern="^del_cat_"),
+                CallbackQueryHandler(product_menu_entry, pattern="^product_menu$"),
                 cancel_cb,
             ],
             DELETE_SELECT: [
@@ -646,6 +649,7 @@ def get_product_handler():
             VIEW_LIST: [
                 CallbackQueryHandler(prod_view_category, pattern="^view_cat_"),
                 CallbackQueryHandler(prod_view_product, pattern="^view_prod_"),
+                CallbackQueryHandler(product_menu_entry, pattern="^product_menu$"),
                 cancel_cb,
             ],
         },

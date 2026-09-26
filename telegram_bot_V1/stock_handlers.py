@@ -745,6 +745,7 @@ def get_stock_handler():
             ],
             STOCK_IN_CAT: [
                 CallbackQueryHandler(stock_in_cat_select, pattern="^sin_"),
+                CallbackQueryHandler(stock_menu_entry, pattern="^product_menu$"),
                 stock_menu_cb, cancel_cb,
             ],
             STOCK_IN_PRODUCT: [
@@ -757,6 +758,7 @@ def get_stock_handler():
             ],
             STOCK_OUT_CAT: [
                 CallbackQueryHandler(stock_out_cat_select, pattern="^sout_"),
+                CallbackQueryHandler(stock_menu_entry, pattern="^product_menu$"),
                 stock_menu_cb, cancel_cb,
             ],
             STOCK_OUT_PRODUCT: [
@@ -770,10 +772,12 @@ def get_stock_handler():
             STOCK_VIEW_CAT: [
                 CallbackQueryHandler(stock_view_cat_select, pattern="^sview_"),
                 CallbackQueryHandler(stock_view_start, pattern="^stk_view$"),
+                CallbackQueryHandler(stock_menu_entry, pattern="^product_menu$"),
                 stock_menu_cb, cancel_cb,
             ],
             CONSIGN_CAT: [
                 CallbackQueryHandler(consign_cat_select, pattern="^scon_"),
+                CallbackQueryHandler(stock_menu_entry, pattern="^product_menu$"),
                 stock_menu_cb, cancel_cb,
             ],
             CONSIGN_PRODUCT: [
