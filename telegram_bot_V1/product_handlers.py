@@ -173,15 +173,20 @@ async def prod_add_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def prod_add_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle category selection."""
+    """Handle category selection and pagination."""
     query = update.callback_query
     await query.answer()
     data = query.data
+    tenant_id = get_tenant_id(query.effective_user.id)
 
     if data.startswith("add_cat_page_"):
         page = int(data.split("_")[-1])
-        tenant_id = get_tenant_id(query.effective_user.id)
         kb = _categories_keyboard("add_cat", tenant_id, page)
+        await query.edit_message_text("Pilih kategori:", reply_markup=kb, parse_mode="Markdown")
+        return ADD_CATEGORY
+
+    if data == "add_cat_back":
+        kb = _categories_keyboard("add_cat", tenant_id)
         await query.edit_message_text("Pilih kategori:", reply_markup=kb, parse_mode="Markdown")
         return ADD_CATEGORY
 
@@ -191,21 +196,24 @@ async def prod_add_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = SessionLocal()
     category = db.query(Product.category).filter(
         Product.category.like(f"{cat_short}%"),
-        Product.tenant_id == get_tenant_id(query.effective_user.id)
+        Product.tenant_id == tenant_id
     ).first()
     full_cat = category[0] if category else cat_short
     db.close()
 
     context.user_data["new_product_full_category"] = full_cat
+    
+    # Go to product selection (to pick existing or confirm new)
+    kb, _ = _products_keyboard("add_prod", cat_short, tenant_id, mode="add")
     await query.edit_message_text(
-        f"Kategori: *{full_cat}*\n\nKetik harga (angka):",
-        parse_mode="Markdown"
+        f"Kategori: *{full_cat}*\n\nPilih produk existente atau ketik nama baru:",
+        reply_markup=kb, parse_mode="Markdown"
     )
-    return ADD_PRICE
+    return ADD_CATEGORY
 
 
 async def prod_add_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle price input and create product."""
+    """Handle price input and create product (from text input)."""
     text = update.message.text.strip()
     try:
         price = int(text)
@@ -216,8 +224,9 @@ async def prod_add_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ADD_PRICE
     
     db = SessionLocal()
+    tenant_id = get_tenant_id(update.effective_user.id)
     max_id = db.query(Product.id).filter(
-        Product.tenant_id == get_tenant_id(update.effective_user.id)
+        Product.tenant_id == tenant_id
     ).order_by(Product.id.desc()).first()
     new_id = (max_id[0] + 1) if max_id else 1
     
@@ -228,7 +237,7 @@ async def prod_add_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
         subcategory=context.user_data.get("new_product_category"),
         price=price,
         stock=0,
-        tenant_id=get_tenant_id(update.effective_user.id)
+        tenant_id=tenant_id
     )
     db.add(product)
     db.commit()
@@ -244,6 +253,52 @@ async def prod_add_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
     return PRODUCT_MENU
+
+
+async def prod_add_product_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle product selection for ADD flow."""
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    tenant_id = get_tenant_id(query.effective_user.id)
+
+    if data == "add_prod_back":
+        cat_short = context.user_data.get("new_product_category", "")
+        kb, _ = _products_keyboard("add_prod", cat_short, tenant_id, mode="add")
+        await query.edit_message_text(
+            f"Kategori: *{context.user_data.get('new_product_full_category', '')}*\n\nPilih produk existente atau ketik nama baru:",
+            reply_markup=kb, parse_mode="Markdown"
+        )
+        return ADD_CATEGORY
+
+    if "_pg_" in data:
+        parts = data.replace("add_prod_", "").split("_pg_")
+        cat_short = parts[0]
+        page = int(parts[1])
+        kb, _ = _products_keyboard("add_prod", cat_short, tenant_id, page, mode="add")
+        await query.edit_message_text("Pilih produk:", reply_markup=kb, parse_mode="Markdown")
+        return ADD_CATEGORY
+
+    # Selected existing product - auto-fill and ask for price
+    product_id = int(data.split("_p_")[1])
+    db = SessionLocal()
+    product = db.query(Product).filter(Product.id == product_id).first()
+    db.close()
+
+    if product:
+        context.user_data["new_product_name"] = product.item_name
+        context.user_data["new_product_category"] = product.subcategory
+        context.user_data["new_product_full_category"] = product.category
+        await query.edit_message_text(
+            f"✏️ *Edit Produk: {product.item_name}*\n\n"
+            f"Harga saat ini: Rp{product.price:,}\n\n"
+            f"Ketik harga baru (atau sama untuk hapus):",
+            parse_mode="Markdown"
+        )
+        return ADD_PRICE
+    
+    await query.edit_message_text("Produk tidak ditemukan.")
+    return ADD_CATEGORY
 
 
 # ── Edit Harga ─────────────────────────────────────────────────────────────
@@ -468,6 +523,54 @@ async def prod_view_category(update: Update, context: ContextTypes.DEFAULT_TYPE)
     return VIEW_LIST
 
 
+async def prod_view_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle product selection/pagination in VIEW mode."""
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    tenant_id = get_tenant_id(query.effective_user.id)
+
+    if data == "view_prod_back":
+        kb = _categories_keyboard("view_cat", tenant_id)
+        await query.edit_message_text("Pilih kategori:", reply_markup=kb, parse_mode="Markdown")
+        return VIEW_LIST
+
+    if "_pg_" in data:
+        parts = data.replace("view_prod_", "").split("_pg_")
+        cat_short = parts[0]
+        page = int(parts[1])
+        kb, full_cat = _products_keyboard("view_prod", cat_short, tenant_id, page)
+        await query.edit_message_text(
+            f"📦 *{full_cat}* (produk):\n\n",
+            reply_markup=kb, parse_mode="Markdown"
+        )
+        return VIEW_LIST
+
+    # Product selected - show details
+    product_id = int(data.split("_p_")[1])
+    db = SessionLocal()
+    product = db.query(Product).filter(Product.id == product_id).first()
+    db.close()
+
+    if product:
+        await query.edit_message_text(
+            f"📦 *Detail Produk*\n\n"
+            f"📝 Nama: *{product.item_name}*\n"
+            f"🏷️ Kategori: {product.category}\n"
+            f"📂 Sub-kategori: {product.subcategory}\n"
+            f"💰 Harga: *Rp{product.price:,}*\n"
+            f"📦 Stok: {product.stock}\n"
+            f"🆔 ID: #{product.id}",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔙 Kembali", callback_data="view_prod_back")]
+            ]),
+            parse_mode="Markdown"
+        )
+    else:
+        await query.edit_message_text("Produk tidak ditemukan.")
+    return VIEW_LIST
+
+
 async def prod_view_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Go back to category list."""
     query = update.callback_query
@@ -513,6 +616,7 @@ def get_product_handler():
             ],
             ADD_CATEGORY: [
                 CallbackQueryHandler(prod_add_category, pattern="^add_cat_"),
+                CallbackQueryHandler(prod_add_product_select, pattern="^add_prod_"),
                 cancel_cb,
             ],
             ADD_PRICE: [
@@ -541,7 +645,7 @@ def get_product_handler():
             ],
             VIEW_LIST: [
                 CallbackQueryHandler(prod_view_category, pattern="^view_cat_"),
-                CallbackQueryHandler(prod_view_back, pattern="^view_prod_back$"),
+                CallbackQueryHandler(prod_view_product, pattern="^view_prod_"),
                 cancel_cb,
             ],
         },

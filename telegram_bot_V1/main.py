@@ -28,7 +28,6 @@ from voice_ai_handler import handle_voice, handle_voice_callback, handle_voice_t
 from owner_handlers import get_owner_handler
 from stock_handlers import get_stock_handler
 from product_handlers import get_product_handler
-import urllib.parse
 from auth import (
     sync_user_info, is_registered, is_kasir as auth_is_kasir,
     is_owner as auth_is_owner, validate_and_activate_token, get_tenant_id, get_store_name
@@ -74,18 +73,6 @@ _product_cache = {}       # {tenant_id: {product_id: {"id", "item_name", "price"
 _category_cache = {}      # {tenant_id: [list of category names]}
 _cache_timestamp = {}     # {tenant_id: timestamp}
 CACHE_TTL = 60            # seconds — refresh every 60s
-
-
-# Callback data helpers — URL-encode category names to handle spaces/special chars
-def _enc(s: str) -> str:
-    """Encode string for safe callback data (max 64 bytes)."""
-    # Use quote with safe chars to keep it readable, truncate if needed
-    encoded = urllib.parse.quote(s, safe='')
-    return encoded[:50]  # leave room for prefixes like "cat_", "page_", etc.
-
-def _dec(s: str) -> str:
-    """Decode callback data string."""
-    return urllib.parse.unquote(s)
 
 
 def _refresh_cache_if_needed(tenant_id=None):
@@ -401,9 +388,9 @@ def build_categories_keyboard(tenant_id=None):
     # Display 2 categories per row
     row = []
     for cat in categories:
-        cat_name = cat  # already a string, not a tuple
-        # URL-encode category name for safe callback data
-        cb_data = f"cat_{_enc(cat_name)}"
+        cat_name = cat[0]
+        # Using a short callback data to avoid Telegram's 64 byte limit
+        cb_data = f"cat_{cat_name[:20]}"
         row.append(InlineKeyboardButton(cat_name, callback_data=cb_data))
         if len(row) == 2:
             keyboard.append(row)
@@ -419,7 +406,6 @@ def build_categories_keyboard(tenant_id=None):
 def build_products_keyboard(category_prefix, page=1, tenant_id=None):
     """Build the inline keyboard for products in a category with pagination (uses cache)."""
     category = get_full_category_name(category_prefix, tenant_id)
-    enc_cat = _enc(category)  # encode full category name for callback data
 
     per_page = 5
     offset = (page - 1) * per_page
@@ -445,19 +431,19 @@ def build_products_keyboard(category_prefix, page=1, tenant_id=None):
         keyboard.append([InlineKeyboardButton(label, callback_data=f"noop")])
         keyboard.append([
             InlineKeyboardButton(
-                "➖", callback_data=f"rem_{p['id']}_{enc_cat}_{page}"),
+                "➖", callback_data=f"rem_{p['id']}_{category_prefix}_{page}"),
             InlineKeyboardButton(
-                "➕ Tambah", callback_data=f"add_{p['id']}_{enc_cat}_{page}")
+                "➕ Tambah", callback_data=f"add_{p['id']}_{category_prefix}_{page}")
         ])
 
     # Pagination Row
     nav_row = []
     if page > 1:
         nav_row.append(InlineKeyboardButton(
-            "⬅️ Prev", callback_data=f"page_{enc_cat}_{page-1}"))
+            "⬅️ Prev", callback_data=f"page_{category_prefix}_{page-1}"))
     if page < total_pages:
         nav_row.append(InlineKeyboardButton(
-            "Next ➡️", callback_data=f"page_{enc_cat}_{page+1}"))
+            "Next ➡️", callback_data=f"page_{category_prefix}_{page+1}"))
     if nav_row:
         keyboard.append(nav_row)
 
@@ -636,11 +622,10 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
         return
 
-    # Handle category click (cat_<encoded_category>)
+    # Handle category click (cat_<category_prefix>)
     if data.startswith("cat_"):
         await query.answer()
-        enc_cat = data[4:]
-        cat_prefix = _dec(enc_cat)
+        cat_prefix = data[4:]
         tenant_id = get_tenant_id(user_id)
         reply_markup, full_cat_name = build_products_keyboard(
             cat_prefix, page=1, tenant_id=tenant_id)
@@ -995,15 +980,13 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Handle pagination (page_<encoded_category>_<page>)
+    # Handle pagination (page_<category_prefix>_<page>)
     if data.startswith("page_"):
         await query.answer()
         tenant_id = get_tenant_id(user_id)
-        # Format: page_{enc_cat}_{page} — split from right to handle encoded underscores
-        rest = data[5:]  # remove "page_"
-        enc_cat, page_str = rest.rsplit("_", 1)
-        cat_prefix = _dec(enc_cat)
-        page = int(page_str)
+        parts = data.split("_")
+        cat_prefix = parts[1]
+        page = int(parts[2])
         reply_markup, full_cat_name = build_products_keyboard(
             cat_prefix, page=page, tenant_id=tenant_id)
         text = build_cart_text_from_memory(
@@ -1011,15 +994,13 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
         return
 
-    # Handle add item (add_<product_id>_<encoded_category>_<page>) — IN-MEMORY, no DB hit!
+    # Handle add item (add_<product_id>_<category_prefix>_<page>) — IN-MEMORY, no DB hit!
     if data.startswith("add_"):
         tenant_id = get_tenant_id(user_id)
-        # Format: add_{product_id}_{enc_cat}_{page} — split from right
-        rest = data[4:]  # remove "add_"
-        product_id_str, enc_cat, page_str = rest.rsplit("_", 2)
-        product_id = int(product_id_str)
-        cat_prefix = _dec(enc_cat)
-        page = int(page_str)
+        parts = data.split("_")
+        product_id = int(parts[1])
+        cat_prefix = parts[2]
+        page = int(parts[3])
 
         # Update in-memory cart (instant!)
         add_to_memory_cart(context, product_id)
@@ -1037,15 +1018,13 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
         return
 
-    # Handle remove item (rem_<product_id>_<encoded_category>_<page>) — IN-MEMORY, no DB hit!
+    # Handle remove item (rem_<product_id>_<category_prefix>_<page>) — IN-MEMORY, no DB hit!
     if data.startswith("rem_"):
         tenant_id = get_tenant_id(user_id)
-        # Format: rem_{product_id}_{enc_cat}_{page} — split from right
-        rest = data[4:]  # remove "rem_"
-        product_id_str, enc_cat, page_str = rest.rsplit("_", 2)
-        product_id = int(product_id_str)
-        cat_prefix = _dec(enc_cat)
-        page = int(page_str)
+        parts = data.split("_")
+        product_id = int(parts[1])
+        cat_prefix = parts[2]
+        page = int(parts[3])
 
         # Update in-memory cart (instant!)
         remove_from_memory_cart(context, product_id)
