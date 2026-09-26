@@ -74,7 +74,7 @@ def _categories_keyboard(prefix: str, tenant_id=None, page: int = 1):
     if nav:
         keyboard.append(nav)
 
-    keyboard.append([InlineKeyboardButton("🔙 Menu Produk", callback_data="product_menu")])
+    keyboard.append([InlineKeyboardButton("🔙 Menu Produk", callback_data="prod_menu_back")])
     return InlineKeyboardMarkup(keyboard)
 
 
@@ -111,6 +111,7 @@ def _products_keyboard(prefix: str, category_short: str, tenant_id=None, page: i
         keyboard.append(nav)
 
     keyboard.append([InlineKeyboardButton("🔙 Pilih Kategori", callback_data=f"{prefix}_back")])
+    keyboard.append([InlineKeyboardButton("🔙 Menu Produk", callback_data="prod_menu_back")])
     return InlineKeyboardMarkup(keyboard), full_cat
 
 
@@ -167,10 +168,27 @@ async def product_add_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tenant_id = get_tenant_id(update.effective_user.id)
     kb = _categories_keyboard("add_cat", tenant_id)
     await update.message.reply_text(
-        f"Nama: *{text}*\n\nPilih kategori:",
+        f"Nama: *{text}*\n\nPilih kategori dari tombol, atau *ketik nama kategori baru*:",
         reply_markup=kb, parse_mode="Markdown"
     )
     return PRODUCT_ADD_CAT
+
+
+async def product_add_category_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle new category typed by user."""
+    text = update.message.text.strip()
+    if not text:
+        await update.message.reply_text("Kategori tidak boleh kosong. Ketik nama kategori baru:")
+        return PRODUCT_ADD_CAT
+
+    context.user_data["new_product_category"] = text[:18]
+    context.user_data["new_product_full_category"] = text
+    
+    await update.message.reply_text(
+        f"Kategori baru: *{text}*\n\nKetik harga (angka) tanpa titik (contoh: 15000):",
+        parse_mode="Markdown"
+    )
+    return PRODUCT_ADD_PRICE
 
 
 async def product_add_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -223,13 +241,7 @@ async def product_add_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     db = SessionLocal()
     tenant_id = get_tenant_id(update.effective_user.id)
-    max_id = db.query(Product.id).filter(
-        Product.tenant_id == tenant_id
-    ).order_by(Product.id.desc()).first()
-    new_id = (max_id[0] + 1) if max_id else 1
-    
     product = Product(
-        id=new_id,
         item_name=context.user_data.get("new_product_name"),
         category=context.user_data.get("new_product_full_category"),
         subcategory=context.user_data.get("new_product_category"),
@@ -239,14 +251,20 @@ async def product_add_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     db.add(product)
     db.commit()
+    db.refresh(product)
+    
+    p_name = product.item_name
+    p_cat = product.category
+    p_price = product.price
+    p_id = product.id
     db.close()
 
     await update.message.reply_text(
         f"✅ *Produk berhasil ditambahkan!*\n\n"
-        f"📦 Nama: *{product.item_name}*\n"
-        f"🏷️ Kategori: {product.category}\n"
-        f"💰 Harga: Rp{product.price:,}\n"
-        f"🆔 ID: #{product.id}",
+        f"📦 Nama: *{p_name}*\n"
+        f"🏷️ Kategori: {p_cat}\n"
+        f"💰 Harga: Rp{p_price:,}\n"
+        f"🆔 ID: #{p_id}",
         reply_markup=_product_menu_keyboard(),
         parse_mode="Markdown"
     )
@@ -546,13 +564,21 @@ async def main_menu_return(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Cancel current operation."""
+    """Cancel current operation and return to product menu."""
+    query = update.callback_query
+    if query:
+        await query.answer()
+        await query.edit_message_text(
+            "📦 *Manajemen Produk*\n\nPilih menu:",
+            reply_markup=_product_menu_keyboard(),
+            parse_mode="Markdown"
+        )
     return PRODUCT_MENU
 
 
 def get_product_handler():
     """Build and return the product management ConversationHandler."""
-    cancel_cb = CallbackQueryHandler(cancel_handler, pattern="^cancel$")
+    cancel_cb = CallbackQueryHandler(cancel_handler, pattern="^(cancel|prod_menu_back)$")
 
     return ConversationHandler(
         entry_points=[
@@ -572,6 +598,7 @@ def get_product_handler():
                 cancel_cb,
             ],
             PRODUCT_ADD_CAT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, product_add_category_text),
                 CallbackQueryHandler(product_add_category, pattern="^add_cat_back"),
                 CallbackQueryHandler(product_add_category, pattern="^add_cat_page_"),
                 CallbackQueryHandler(product_add_category, pattern="^add_cat_"),

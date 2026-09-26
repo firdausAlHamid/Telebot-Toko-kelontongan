@@ -9,9 +9,39 @@ def _ipv4_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
 socket.getaddrinfo = _ipv4_getaddrinfo
 # ====================================================================
 
-from telegram import Update, BotCommand
+from telegram import Update, BotCommand, CallbackQuery
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters, CallbackQueryHandler
 from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, MenuButtonWebApp, WebAppInfo
+import telegram.error
+
+# === Monkey-patch CallbackQuery.answer to prevent crashes on slow network ===
+_original_answer = CallbackQuery.answer
+async def _safe_answer(self, *args, **kwargs):
+    try:
+        return await _original_answer(self, *args, **kwargs)
+    except telegram.error.BadRequest as e:
+        if "Query is too old" in str(e) or "query id is invalid" in str(e):
+            pass # Ignore expired queries
+        else:
+            raise
+    except telegram.error.TimedOut:
+        pass # Ignore timeouts
+    except Exception:
+        pass # Silently proceed
+CallbackQuery.answer = _safe_answer
+
+# === Monkey-patch Message.edit_text to prevent double-click crashes ===
+from telegram import Message
+_original_edit_text = Message.edit_text
+async def _safe_edit_text(self, *args, **kwargs):
+    try:
+        return await _original_edit_text(self, *args, **kwargs)
+    except telegram.error.BadRequest as e:
+        if "Message is not modified" in str(e):
+            return self # Silently ignore
+        raise
+Message.edit_text = _safe_edit_text
+# ============================================================================
 from sqlalchemy import func
 from database import SessionLocal, CartItem, Product, Transaction, TransactionItem, StockMovement
 from receipt_generator import generate_receipt_image
@@ -240,9 +270,9 @@ def get_cart_summary(user_id, tenant_id=None):
     return items
 
 
-def build_cart_text_from_memory(context, prepend_text=""):
+def build_cart_text_from_memory(context, prepend_text="", tenant_id=None):
     """Build cart summary text using in-memory cart (fast, no DB hit)."""
-    cart_items = memory_cart_to_summary(context)
+    cart_items = memory_cart_to_summary(context, tenant_id)
 
     text = prepend_text + "\n"
 
@@ -388,10 +418,10 @@ def build_categories_keyboard(tenant_id=None):
     # Display 2 categories per row
     row = []
     for cat in categories:
-        cat_name = cat[0]
+        # cat is already a string (e.g. "Sembako"), NOT a tuple
         # Using a short callback data to avoid Telegram's 64 byte limit
-        cb_data = f"cat_{cat_name[:20]}"
-        row.append(InlineKeyboardButton(cat_name, callback_data=cb_data))
+        cb_data = f"cat_{cat[:20]}"
+        row.append(InlineKeyboardButton(cat, callback_data=cb_data))
         if len(row) == 2:
             keyboard.append(row)
             row = []
@@ -409,7 +439,7 @@ def build_products_keyboard(category_prefix, page=1, tenant_id=None):
 
     per_page = 5
     offset = (page - 1) * per_page
-    products, total_products = get_cached_products_by_category(category, offset, per_page)
+    products, total_products = get_cached_products_by_category(category, tenant_id, offset, per_page)
     total_pages = math.ceil(total_products / per_page)
 
     product_ids = [p["id"] for p in products]
@@ -558,7 +588,7 @@ async def handler_mulai_inline(update: Update, context: ContextTypes.DEFAULT_TYP
     ensure_cart_loaded(user_id, context)
     tenant_id = get_tenant_id(user_id)
     text = build_cart_text_from_memory(
-        context, "🏪 *Katalog Produk*\n\nSilakan pilih kategori:")
+        context, "🏪 *Katalog Produk*\n\nSilakan pilih kategori:", tenant_id)
     reply_markup = build_categories_keyboard(tenant_id)
     
     if query:
@@ -583,7 +613,8 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Handle "done ordering" — go directly to payment options
     if data == "done_ordering":
         await query.answer()
-        cart_items = memory_cart_to_summary(context)
+        tenant_id = get_tenant_id(user_id)
+        cart_items = memory_cart_to_summary(context, tenant_id)
         if not cart_items:
             await query.edit_message_text("Keranjang kamu masih kosong. Silakan tambah produk dulu.")
             return
@@ -617,7 +648,7 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer()
         tenant_id = get_tenant_id(user_id)
         text = build_cart_text_from_memory(
-            context, "🏪 *Katalog Produk*\n\nSilakan pilih kategori:")
+            context, "🏪 *Katalog Produk*\n\nSilakan pilih kategori:", tenant_id)
         reply_markup = build_categories_keyboard(tenant_id)
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
         return
@@ -630,14 +661,15 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup, full_cat_name = build_products_keyboard(
             cat_prefix, page=1, tenant_id=tenant_id)
         text = build_cart_text_from_memory(
-            context, f"📦 *Kategori: {full_cat_name}*\n\nPilih produk:")
+            context, f"📦 *Kategori: {full_cat_name}*\n\nPilih produk:", tenant_id)
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
         return
 
     # Handle cash payment — show denomination selector
     if data == "pay_cash":
         await query.answer()
-        cart_items = memory_cart_to_summary(context)
+        tenant_id = get_tenant_id(user_id)
+        cart_items = memory_cart_to_summary(context, tenant_id)
         if not cart_items:
             await query.edit_message_text("Keranjang kamu masih kosong.")
             return
@@ -705,7 +737,8 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop("cash_data", None)
         context.user_data.pop("cash_grand_total", None)
 
-        cart_items = memory_cart_to_summary(context)
+        tenant_id = get_tenant_id(user_id)
+        cart_items = memory_cart_to_summary(context, tenant_id)
         if not cart_items:
             await query.edit_message_text("Keranjang kamu masih kosong.")
             return
@@ -812,24 +845,6 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         db.commit()
 
-        recommendations = get_recommendations(calc["purchased_categories"])
-        store_schedule = get_upcoming_schedules_receipt()
-        store_name = get_store_name(user_id) or "TOKO KELONTONG"
-        receipt_io = generate_receipt_image(
-            trx_no=trx_no,
-            date_str=date_str,
-            cart_items=cart_items,
-            total=calc["subtotal"],
-            payment_method=payment_method,
-            discount_details=calc["discount_details"],
-            total_discount=calc["total_discount"],
-            grand_total=calc["grand_total"],
-            recommendations=recommendations,
-            whatsapp_number=WHATSAPP_NUMBER,
-            store_schedule=store_schedule,
-            store_name=store_name
-        )
-
         db.query(CartItem).filter(CartItem.user_id == user_id).delete()
         db.commit()
         db.close()
@@ -848,19 +863,19 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 for denom, count in breakdown:
                     change_text += f" Rp{denom:,}×{count}"
 
+        keyboard = [
+            [InlineKeyboardButton("📄 Buat Struk", callback_data=f"receipt_{new_trx.id}")],
+            [InlineKeyboardButton("🔙 Menu Utama", callback_data="back_to_catalog")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
         await query.edit_message_text(
             f"✅ Pembayaran tunai berhasil!\n"
             f"🧾 Invoice: {trx_no}\n"
             f"💵 Dibayar: Rp{cash_total:,}"
             f"{change_text}\n\n"
-            f"Sedang mengirim struk...",
-            parse_mode="Markdown"
-        )
-
-        await context.bot.send_photo(
-            chat_id=user_id,
-            photo=receipt_io,
-            caption="🧾 *STRUK TRANSAKSI*\nSilakan klik Share dan cetak via RawBT.",
+            f"Klik 'Buat Struk' jika pelanggan meminta struk.",
+            reply_markup=reply_markup,
             parse_mode="Markdown"
         )
 
@@ -941,41 +956,24 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 db.add(movement)
         db.commit()
 
-        # Get recommendations
-        recommendations = get_recommendations(calc["purchased_categories"])
-
-        # Generate Image receipt
-        store_schedule = get_upcoming_schedules_receipt()
-        store_name = get_store_name(user_id) or "TOKO KELONTONG"
-        receipt_io = generate_receipt_image(
-            trx_no=trx_no,
-            date_str=date_str,
-            cart_items=cart_items,
-            total=calc["subtotal"],
-            payment_method=payment_method,
-            discount_details=calc["discount_details"],
-            total_discount=calc["total_discount"],
-            grand_total=calc["grand_total"],
-            recommendations=recommendations,
-            whatsapp_number=WHATSAPP_NUMBER,
-            store_schedule=store_schedule,
-            store_name=store_name
-        )
-
         # Clear cart (DB + memory)
         db.query(CartItem).filter(CartItem.user_id == user_id).delete()
         db.commit()
         db.close()
         set_memory_cart(context, {})
 
-        # Update the inline keyboard message to show success
-        await query.edit_message_text("✅ Pembayaran berhasil diproses. Sedang mengirim struk...")
+        keyboard = [
+            [InlineKeyboardButton("📄 Buat Struk", callback_data=f"receipt_{new_trx.id}")],
+            [InlineKeyboardButton("🔙 Menu Utama", callback_data="back_to_catalog")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
 
-        # Send the generated receipt as a photo
-        await context.bot.send_photo(
-            chat_id=user_id,
-            photo=receipt_io,
-            caption="🧾 *STRUK TRANSAKSI*\nSilakan klik Share dan cetak via RawBT.",
+        await query.edit_message_text(
+            f"✅ Pembayaran QRIS berhasil diproses.\n"
+            f"🧾 Invoice: {trx_no}\n"
+            f"💰 Grand Total: Rp{calc['grand_total']:,}\n\n"
+            f"Klik 'Buat Struk' jika pelanggan meminta struk.",
+            reply_markup=reply_markup,
             parse_mode="Markdown"
         )
         return
@@ -990,7 +988,7 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup, full_cat_name = build_products_keyboard(
             cat_prefix, page=page, tenant_id=tenant_id)
         text = build_cart_text_from_memory(
-            context, f"📦 *Kategori: {full_cat_name}*\n\nPilih produk:")
+            context, f"📦 *Kategori: {full_cat_name}*\n\nPilih produk:", tenant_id)
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
         return
 
@@ -1014,7 +1012,7 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup, full_cat_name = build_products_keyboard(
             cat_prefix, page=page, tenant_id=tenant_id)
         text = build_cart_text_from_memory(
-            context, f"📦 *Kategori: {full_cat_name}*\n\nPilih produk:")
+            context, f"📦 *Kategori: {full_cat_name}*\n\nPilih produk:", tenant_id)
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
         return
 
@@ -1037,8 +1035,54 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup, full_cat_name = build_products_keyboard(
             cat_prefix, page=page, tenant_id=tenant_id)
         text = build_cart_text_from_memory(
-            context, f"📦 *Kategori: {full_cat_name}*\n\nPilih produk:")
+            context, f"📦 *Kategori: {full_cat_name}*\n\nPilih produk:", tenant_id)
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+        return
+
+    # Handle receipt generation
+    if data.startswith("receipt_"):
+        trx_id = int(data.split("_")[1])
+        await query.answer("🧾 Membuat struk...")
+        
+        db = SessionLocal()
+        trx = db.query(Transaction).filter(Transaction.id == trx_id).first()
+        if not trx:
+            await query.edit_message_text("❌ Transaksi tidak ditemukan.")
+            db.close()
+            return
+            
+        items = db.query(TransactionItem).filter(TransactionItem.transaction_id == trx_id).all()
+        cart_items = [(i.product_id, i.product_name, i.unit_price, i.quantity) for i in items]
+        
+        calc = calculate_cart_with_discounts(cart_items)
+        recommendations = get_recommendations(calc["purchased_categories"])
+        date_str = trx.created_at.strftime("%d %B %Y %H:%M:%S")
+        store_schedule = get_upcoming_schedules_receipt()
+        store_name = get_store_name(trx.user_id) or "TOKO KELONTONG"
+        
+        receipt_io = generate_receipt_image(
+            trx_no=trx.invoice_no,
+            date_str=date_str,
+            cart_items=cart_items,
+            total=trx.subtotal,
+            payment_method=trx.payment_method,
+            discount_details=calc["discount_details"],
+            total_discount=trx.total_discount,
+            grand_total=trx.grand_total,
+            recommendations=recommendations,
+            whatsapp_number=WHATSAPP_NUMBER,
+            store_schedule=store_schedule,
+            store_name=store_name
+        )
+        db.close()
+        
+        await query.edit_message_text("✅ Struk berhasil dikirim.")
+        await context.bot.send_photo(
+            chat_id=user_id,
+            photo=receipt_io,
+            caption="🧾 *STRUK TRANSAKSI*\nSilakan klik Share dan cetak via RawBT.",
+            parse_mode="Markdown"
+        )
         return
 
     # Fallback — unknown callback
@@ -1160,6 +1204,9 @@ if __name__ == "__main__":
     app = (
         ApplicationBuilder()
         .token(BOT_TOKEN)
+        .connect_timeout(30.0)
+        .read_timeout(30.0)
+        .get_updates_read_timeout(40.0)
         .post_init(post_init)
         .concurrent_updates(True)    # ⚡ Process multiple callbacks in parallel!
         .build()

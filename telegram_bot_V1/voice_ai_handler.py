@@ -350,12 +350,7 @@ def do_tambah_produk(params: dict, tenant_id=None) -> str:
 
     db = SessionLocal()
 
-    # Get the next ID
-    max_id = db.query(Product.id).filter(Product.tenant_id == tenant_id).order_by(Product.id.desc()).first()
-    new_id = (max_id[0] + 1) if max_id else 1
-
     new_product = Product(
-        id=new_id,
         category=kategori,
         subcategory=subkategori,
         item_name=nama,
@@ -364,6 +359,8 @@ def do_tambah_produk(params: dict, tenant_id=None) -> str:
     )
     db.add(new_product)
     db.commit()
+    db.refresh(new_product)
+    new_id = new_product.id
     db.close()
     
     _invalidate_cache_safe(tenant_id)
