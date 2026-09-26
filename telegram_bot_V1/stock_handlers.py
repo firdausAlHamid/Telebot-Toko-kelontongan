@@ -776,7 +776,7 @@ def get_stock_handler():
             ],
             STOCK_IN_PRODUCT: [
                 CallbackQueryHandler(stock_in_product_select, pattern="^sin_back"),
-                CallbackQueryHandler(stock_in_product_select, pattern="^sin_page_"),
+                CallbackQueryHandler(stock_in_product_select, pattern="^sin_.*_pg_"),
                 CallbackQueryHandler(stock_in_product_select, pattern="^sin_"),
                 stock_menu_cb, cancel_cb,
             ],
@@ -793,7 +793,7 @@ def get_stock_handler():
             ],
             STOCK_OUT_PRODUCT: [
                 CallbackQueryHandler(stock_out_product_select, pattern="^sout_back"),
-                CallbackQueryHandler(stock_out_product_select, pattern="^sout_page_"),
+                CallbackQueryHandler(stock_out_product_select, pattern="^sout_.*_pg_"),
                 CallbackQueryHandler(stock_out_product_select, pattern="^sout_"),
                 stock_menu_cb, cancel_cb,
             ],
@@ -811,7 +811,7 @@ def get_stock_handler():
             ],
             STOCK_VIEW_PROD: [
                 CallbackQueryHandler(stock_view_prod, pattern="^sview_prod_back"),
-                CallbackQueryHandler(stock_view_prod, pattern="^sview_prod_page_"),
+                CallbackQueryHandler(stock_view_prod, pattern="^sview_prod_.*_pg_"),
                 CallbackQueryHandler(stock_view_prod, pattern="^sview_prod_"),
                 cancel_cb,
             ],
@@ -824,7 +824,7 @@ def get_stock_handler():
             ],
             CONSIGN_PRODUCT: [
                 CallbackQueryHandler(consign_product_select, pattern="^scon_back"),
-                CallbackQueryHandler(consign_product_select, pattern="^scon_page_"),
+                CallbackQueryHandler(consign_product_select, pattern="^scon_.*_pg_"),
                 CallbackQueryHandler(consign_product_select, pattern="^scon_"),
                 CallbackQueryHandler(consign_toggle, pattern="^con_"),
                 stock_menu_cb, cancel_cb,

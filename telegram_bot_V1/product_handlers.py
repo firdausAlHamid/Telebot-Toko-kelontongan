@@ -178,7 +178,7 @@ async def product_add_category(update: Update, context: ContextTypes.DEFAULT_TYP
     query = update.callback_query
     await query.answer()
     data = query.data
-    tenant_id = get_tenant_id(query.effective_user.id)
+    tenant_id = get_tenant_id(query.from_user.id)
 
     if data == "add_cat_back":
         kb = _categories_keyboard("add_cat", tenant_id)
@@ -259,7 +259,7 @@ async def product_edit_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
     """Start edit price workflow."""
     query = update.callback_query
     await query.answer()
-    tenant_id = get_tenant_id(query.effective_user.id)
+    tenant_id = get_tenant_id(query.from_user.id)
     kb = _categories_keyboard("edit_cat", tenant_id)
     await query.edit_message_text(
         "✏️ *Edit Harga Produk*\n\nPilih kategori:",
@@ -272,7 +272,7 @@ async def product_edit_category(update: Update, context: ContextTypes.DEFAULT_TY
     """Handle category selection for editing."""
     query = update.callback_query
     await query.answer()
-    tenant_id = get_tenant_id(query.effective_user.id)
+    tenant_id = get_tenant_id(query.from_user.id)
     data = query.data
 
     if data == "edit_cat_back":
@@ -303,13 +303,13 @@ async def product_edit_product(update: Update, context: ContextTypes.DEFAULT_TYP
     data = query.data
 
     if data == "edit_prod_back":
-        tenant_id = get_tenant_id(query.effective_user.id)
+        tenant_id = get_tenant_id(query.from_user.id)
         kb = _categories_keyboard("edit_cat", tenant_id)
         await query.edit_message_text("Pilih kategori:", reply_markup=kb, parse_mode="Markdown")
         return PRODUCT_EDIT_CAT
 
     if "_pg_" in data:
-        tenant_id = get_tenant_id(query.effective_user.id)
+        tenant_id = get_tenant_id(query.from_user.id)
         parts = data.replace("edit_prod_", "").split("_pg_")
         cat_short = parts[0]
         page = int(parts[1])
@@ -371,7 +371,7 @@ async def product_del_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start delete workflow."""
     query = update.callback_query
     await query.answer()
-    tenant_id = get_tenant_id(query.effective_user.id)
+    tenant_id = get_tenant_id(query.from_user.id)
     kb = _categories_keyboard("del_cat", tenant_id)
     await query.edit_message_text(
         "🗑 *Hapus Produk*\n\nPilih kategori:",
@@ -385,7 +385,7 @@ async def product_del_category(update: Update, context: ContextTypes.DEFAULT_TYP
     query = update.callback_query
     await query.answer()
     data = query.data
-    tenant_id = get_tenant_id(query.effective_user.id)
+    tenant_id = get_tenant_id(query.from_user.id)
 
     if data == "del_cat_back":
         kb = _categories_keyboard("del_cat", tenant_id)
@@ -414,13 +414,13 @@ async def product_del_product(update: Update, context: ContextTypes.DEFAULT_TYPE
     data = query.data
 
     if data == "del_prod_back":
-        tenant_id = get_tenant_id(query.effective_user.id)
+        tenant_id = get_tenant_id(query.from_user.id)
         kb = _categories_keyboard("del_cat", tenant_id)
         await query.edit_message_text("Pilih kategori:", reply_markup=kb, parse_mode="Markdown")
         return PRODUCT_DEL_CAT
 
     if "_pg_" in data:
-        tenant_id = get_tenant_id(query.effective_user.id)
+        tenant_id = get_tenant_id(query.from_user.id)
         parts = data.replace("del_prod_", "").split("_pg_")
         cat_short = parts[0]
         page = int(parts[1])
@@ -454,7 +454,7 @@ async def product_view_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
     """Start view workflow."""
     query = update.callback_query
     await query.answer()
-    tenant_id = get_tenant_id(query.effective_user.id)
+    tenant_id = get_tenant_id(query.from_user.id)
     kb = _categories_keyboard("view_cat", tenant_id)
     await query.edit_message_text(
         "📋 *Lihat Produk*\n\nPilih kategori:",
@@ -467,7 +467,7 @@ async def product_view_category(update: Update, context: ContextTypes.DEFAULT_TY
     """Handle category selection for viewing."""
     query = update.callback_query
     await query.answer()
-    tenant_id = get_tenant_id(query.effective_user.id)
+    tenant_id = get_tenant_id(query.from_user.id)
     data = query.data
 
     if data == "view_cat_back":
@@ -495,7 +495,7 @@ async def product_view_product(update: Update, context: ContextTypes.DEFAULT_TYP
     query = update.callback_query
     await query.answer()
     data = query.data
-    tenant_id = get_tenant_id(query.effective_user.id)
+    tenant_id = get_tenant_id(query.from_user.id)
 
     if data == "view_prod_back":
         kb = _categories_keyboard("view_cat", tenant_id)
@@ -589,7 +589,7 @@ def get_product_handler():
             ],
             PRODUCT_EDIT_PROD: [
                 CallbackQueryHandler(product_edit_product, pattern="^edit_prod_back"),
-                CallbackQueryHandler(product_edit_product, pattern="^edit_prod_page_"),
+                CallbackQueryHandler(product_edit_product, pattern="^edit_prod_.*_pg_"),
                 CallbackQueryHandler(product_edit_product, pattern="^edit_prod_"),
                 cancel_cb,
             ],
@@ -605,7 +605,7 @@ def get_product_handler():
             ],
             PRODUCT_DEL_PROD: [
                 CallbackQueryHandler(product_del_product, pattern="^del_prod_back"),
-                CallbackQueryHandler(product_del_product, pattern="^del_prod_page_"),
+                CallbackQueryHandler(product_del_product, pattern="^del_prod_.*_pg_"),
                 CallbackQueryHandler(product_del_product, pattern="^del_prod_"),
                 cancel_cb,
             ],
@@ -617,7 +617,7 @@ def get_product_handler():
             ],
             PRODUCT_VIEW_PROD: [
                 CallbackQueryHandler(product_view_product, pattern="^view_prod_back"),
-                CallbackQueryHandler(product_view_product, pattern="^view_prod_page_"),
+                CallbackQueryHandler(product_view_product, pattern="^view_prod_.*_pg_"),
                 CallbackQueryHandler(product_view_product, pattern="^view_prod_"),
                 cancel_cb,
             ],
