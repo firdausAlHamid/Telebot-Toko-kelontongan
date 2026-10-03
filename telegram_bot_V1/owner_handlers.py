@@ -18,7 +18,7 @@ from telegram.ext import (
     ConversationHandler, filters, MessageHandler
 )
 
-from auth import is_owner, generate_kasir_token, list_kasir_for_owner, deactivate_user, get_store_name
+from auth import require, generate_kasir_token, list_kasir_for_owner, deactivate_user, get_store_name
 from database import SessionLocal, BotUser, Tenant
 
 # ── Try to import config ───────────────────────────────────────────────────────
@@ -40,16 +40,9 @@ logger = logging.getLogger(__name__)
 # ENTRY POINT
 # ==============================================================================
 
+@require("panel:manage")
 async def panel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/panel — entry point for owner management."""
-    user = update.effective_user
-
-    if not is_owner(user.id):
-        await update.message.reply_text(
-            "⛔ Akses ditolak. Command ini hanya untuk pemilik toko (owner)."
-        )
-        return ConversationHandler.END
-
     return await _show_owner_menu(update, context)
 
 
@@ -209,7 +202,8 @@ async def handle_deact_confirm(update: Update, context: ContextTypes.DEFAULT_TYP
     await query.answer()
 
     target_id = int(query.data.split("_")[-1])
-    success, msg = deactivate_user(target_id)
+    owner_id = update.effective_user.id
+    success, msg = deactivate_user(target_id, owner_telegram_id=owner_id)
 
     back_kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("🔙 Kembali ke Panel", callback_data="own_back")]
@@ -275,7 +269,10 @@ async def handle_store_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def get_owner_handler() -> ConversationHandler:
     """Build and return the ConversationHandler for /panel."""
     return ConversationHandler(
-        entry_points=[CommandHandler("panel", panel_command)],
+        entry_points=[
+            CommandHandler("panel", panel_command),
+            CallbackQueryHandler(panel_command, pattern="^main_panel$"),
+        ],
         states={
             OWNER_MENU: [
                 CallbackQueryHandler(handle_gen_token,      pattern="^own_gen_token$"),

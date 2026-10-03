@@ -24,7 +24,7 @@ from config import (
     OPENROUTER_API_KEY, GROQ_API_KEY,
     GROQ_TRANSCRIPTION_MODEL, OPENROUTER_CHAT_MODEL
 )
-from auth import is_kasir, get_tenant_id
+from auth import can, get_tenant_id
 from database import SessionLocal, Product, Promotion, StoreSchedule
 from promotion_service import (
     create_promotion, list_promotions, delete_promotion, format_date_indo
@@ -907,8 +907,8 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     user = update.effective_user
 
-    # Role check — kasir, vendor, and developer can use voice commands
-    if not is_kasir(user.id):
+    # Role check
+    if not can(user.id, "voice:manage"):
         await update.message.reply_text(
             "⛔ Maaf, fitur perintah suara hanya tersedia untuk staf terdaftar."
         )

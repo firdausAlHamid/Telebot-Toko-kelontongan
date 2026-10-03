@@ -171,7 +171,7 @@ def calculate_cart_with_discounts(cart_items):
 # RECOMMENDATION ENGINE
 # =============================================================================
 
-def get_recommendations(purchased_categories, limit=2):
+def get_recommendations(purchased_categories, limit=2, tenant_id=None):
     """
     Get promo recommendations based on purchased categories.
     Finds promos that TARGET purchased categories, for products in DIFFERENT categories.
@@ -190,14 +190,18 @@ def get_recommendations(purchased_categories, limit=2):
     today = date.today()
     db = SessionLocal()
 
-    promos = db.query(Promotion, Product).join(
+    query = db.query(Promotion, Product).join(
         Product, Promotion.product_id == Product.id
     ).filter(
         Promotion.is_active == True,
         Promotion.start_date <= today,
         Promotion.end_date >= today,
         Promotion.target_category.in_(list(purchased_categories)),
-    ).all()
+    )
+    if tenant_id:
+        query = query.filter(Promotion.tenant_id == tenant_id)
+        
+    promos = query.all()
 
     recommendations = []
     seen_products = set()
@@ -240,7 +244,7 @@ def get_recommendations(purchased_categories, limit=2):
 # CRUD OPERATIONS
 # =============================================================================
 
-def create_promotion(product_id, discount_type, discount_value, start_date, end_date, target_category=None):
+def create_promotion(product_id, discount_type, discount_value, start_date, end_date, target_category=None, tenant_id=None):
     """
     Create a new promotion. Enforces max 1 active promo per product.
     Returns (promo_id, message) — promo_id is None on failure.
@@ -265,6 +269,7 @@ def create_promotion(product_id, discount_type, discount_value, start_date, end_
         start_date=start_date,
         end_date=end_date,
         is_active=True,
+        tenant_id=tenant_id,
     )
     db.add(promo)
     db.commit()
@@ -275,7 +280,7 @@ def create_promotion(product_id, discount_type, discount_value, start_date, end_
     return promo_id, "Promosi berhasil ditambahkan!"
 
 
-def list_promotions(active_only=True):
+def list_promotions(active_only=True, tenant_id=None):
     """List promotions with product info and status labels."""
     db = SessionLocal()
 
@@ -285,6 +290,9 @@ def list_promotions(active_only=True):
 
     if active_only:
         query = query.filter(Promotion.is_active == True)
+        
+    if tenant_id:
+        query = query.filter(Promotion.tenant_id == tenant_id)
 
     promos = query.order_by(Promotion.id.desc()).all()
 

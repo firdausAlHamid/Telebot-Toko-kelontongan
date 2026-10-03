@@ -12,7 +12,7 @@ from telegram.ext import (
     MessageHandler, ConversationHandler, filters
 )
 
-from auth import is_kasir as _is_kasir
+from auth import require, get_tenant_id
 from schedule_service import (
     create_schedule, list_schedules, delete_schedule, update_schedule
 )
@@ -30,21 +30,16 @@ logger = logging.getLogger(__name__)
 # HELPERS
 # =============================================================================
 
-def is_admin(update: Update) -> bool:
-    """Check if the user has admin-level access (kasir, vendor, or developer)."""
-    return _is_kasir(update.effective_user.id)
+# No longer needed, using RBAC require
 
 
 # =============================================================================
 # MAIN MENU
 # =============================================================================
 
+@require("schedule:manage")
 async def sched_menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Entry point: /jadwal command — shows admin schedule menu."""
-    if not is_admin(update):
-        if update.message:
-            await update.message.reply_text("⛔ Akses ditolak. Hanya admin yang bisa mengelola jadwal.")
-        return ConversationHandler.END
 
     keyboard = [
         [InlineKeyboardButton("➕ Tambah Jadwal / Libur", callback_data="as_add")],
@@ -395,6 +390,7 @@ def get_admin_schedule_handler():
     return ConversationHandler(
         entry_points=[
             CommandHandler("jadwal", sched_menu_command),
+            CallbackQueryHandler(sched_menu_command, pattern="^main_jadwal$"),
         ],
         states={
             SCHED_MENU: [

@@ -13,7 +13,8 @@ from telegram.ext import (
     MessageHandler, ConversationHandler, filters
 )
 
-from auth import is_kasir as _is_kasir, get_tenant_id
+from auth import require, get_tenant_id
+from receipt_generator import generate_promo_brochure_image
 from database import SessionLocal, Product, Promotion
 from promotion_service import (
     create_promotion, list_promotions, delete_promotion,
@@ -33,9 +34,7 @@ logger = logging.getLogger(__name__)
 # HELPERS
 # =============================================================================
 
-def is_admin(update: Update) -> bool:
-    """Check if the user has admin-level access (kasir, vendor, or developer)."""
-    return _is_kasir(update.effective_user.id)
+# No longer needed, using RBAC require
 
 
 def get_categories(tenant_id=None):
@@ -50,21 +49,27 @@ def get_categories(tenant_id=None):
 # MAIN MENU
 # =============================================================================
 
+@require("promo:view")
 async def promo_menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Entry point: /promo command — shows admin promotion menu."""
-    if not is_admin(update):
-        if update.message:
-            await update.message.reply_text("⛔ Akses ditolak. Hanya admin yang bisa mengelola promosi.")
-        return ConversationHandler.END
-
-    keyboard = [
-        [InlineKeyboardButton("➕ Tambah Promosi", callback_data="ap_add")],
-        [InlineKeyboardButton("✏️ Edit Promosi", callback_data="ap_edit")],
-        [InlineKeyboardButton("📋 Daftar Promosi", callback_data="ap_list")],
-        [InlineKeyboardButton("🗑 Hapus Promosi", callback_data="ap_del")],
-    ]
-
-    text = "🏷️ *Menu Promosi*\n\nPilih aksi di bawah:"
+    user_id = update.effective_user.id
+    from auth import can
+    
+    keyboard = []
+    
+    if can(user_id, "promo:manage"):
+        keyboard = [
+            [InlineKeyboardButton("➕ Tambah Promosi", callback_data="ap_add")],
+            [InlineKeyboardButton("✏️ Edit Promosi", callback_data="ap_edit")],
+            [InlineKeyboardButton("📋 Daftar Promosi", callback_data="ap_list")],
+            [InlineKeyboardButton("🗑 Hapus Promosi", callback_data="ap_del")],
+        ]
+        text = "🏷️ *Menu Promosi*\n\nPilih aksi di bawah:"
+    else:
+        keyboard = [
+            [InlineKeyboardButton("📋 Daftar Promosi Aktif", callback_data="ap_list")]
+        ]
+        text = "🏷️ *Promo Spesial Untukmu!*\n\nCek daftar promo yang sedang berlangsung:"
 
     if update.callback_query:
         await update.callback_query.edit_message_text(
@@ -502,31 +507,39 @@ async def handle_add_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE)
 # =============================================================================
 
 async def show_promo_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show all active promotions as a formatted list."""
-    promos = list_promotions(active_only=True)
-
-    if not promos:
-        text = "📋 *Daftar Promosi*\n\n_Belum ada promosi aktif._"
-    else:
-        text = f"📋 *Daftar Promosi Aktif* ({len(promos)})\n\n"
-        for p in promos:
-            text += (
-                f"*#{p['id']}* — {p['product_name']}\n"
-                f"   🏷️ Diskon: {p['discount_text']}\n"
-                f"   📅 {p['start_date_str']} — {p['end_date_str']}\n"
-                f"   🎯 Target: {p['target_category']}\n"
-                f"   {p['status']}\n\n"
-            )
-
+    """Show all active promotions as a receipt-style brochure."""
+    user_id = update.effective_user.id
+    tenant_id = get_tenant_id(user_id)
+    promos = list_promotions(active_only=True, tenant_id=tenant_id)
+    store_name = get_store_name(user_id) or "TOKO KELONTONG"
+    join_link = f"https://t.me/{context.bot.username}?start=toko_{tenant_id}"
+    
+    # Generate image
+    image_io = generate_promo_brochure_image(promos, store_name, join_link=join_link)
+    
     keyboard = [[InlineKeyboardButton("🔙 Menu Promosi", callback_data="ap_menu")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
 
     if update.callback_query:
-        await update.callback_query.edit_message_text(
-            text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown"
+        # We can't edit a text message into an image easily without deleting
+        # Just delete and send new
+        try:
+            await update.callback_query.message.delete()
+        except:
+            pass
+        await context.bot.send_photo(
+            chat_id=update.effective_chat.id,
+            photo=image_io,
+            caption="🏷️ *Brosur Promo Aktif*",
+            reply_markup=reply_markup,
+            parse_mode="Markdown"
         )
     else:
-        await update.message.reply_text(
-            text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown"
+        await update.message.reply_photo(
+            photo=image_io,
+            caption="🏷️ *Brosur Promo Aktif*",
+            reply_markup=reply_markup,
+            parse_mode="Markdown"
         )
 
     return PROMO_MENU
@@ -884,6 +897,7 @@ def get_admin_conv_handler():
     return ConversationHandler(
         entry_points=[
             CommandHandler("promo", promo_menu_command),
+            CallbackQueryHandler(promo_menu_command, pattern="^main_promo$"),
         ],
         states={
             PROMO_MENU: [

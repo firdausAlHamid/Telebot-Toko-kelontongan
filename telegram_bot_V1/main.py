@@ -62,6 +62,7 @@ from auth import (
     sync_user_info, is_registered, is_kasir as auth_is_kasir,
     is_owner as auth_is_owner, validate_and_activate_token, get_tenant_id, get_store_name
 )
+from menu_helpers import build_main_menu_keyboard, show_main_menu
 import math
 import datetime
 import os
@@ -109,10 +110,6 @@ def _refresh_cache_if_needed(tenant_id=None):
     """Refresh product/category cache if stale."""
     global _product_cache, _category_cache, _cache_timestamp
     
-    if tenant_id is None:
-        # For demo/tenant products, use 0 as key
-        tenant_id = 0
-    
     now = time.time()
     if _cache_timestamp.get(tenant_id, 0) and now - _cache_timestamp[tenant_id] < CACHE_TTL and _product_cache.get(tenant_id):
         return
@@ -141,7 +138,7 @@ def invalidate_product_cache(tenant_id=None):
 def get_cached_products_by_category(category, tenant_id=None, offset=0, limit=5):
     """Get products from cache filtered by category with pagination."""
     _refresh_cache_if_needed(tenant_id)
-    products = _product_cache.get(tenant_id or 0, {})
+    products = _product_cache.get(tenant_id, {})
     all_products = [p for p in products.values() if p["category"] == category]
     return all_products[offset:offset + limit], len(all_products)
 
@@ -149,13 +146,13 @@ def get_cached_products_by_category(category, tenant_id=None, offset=0, limit=5)
 def get_cached_categories(tenant_id=None):
     """Get distinct categories from cache."""
     _refresh_cache_if_needed(tenant_id)
-    return _category_cache.get(tenant_id or 0, [])
+    return _category_cache.get(tenant_id, [])
 
 
 def get_full_category_name(prefix, tenant_id=None):
     """Get full category name from prefix using cache."""
     _refresh_cache_if_needed(tenant_id)
-    categories = _category_cache.get(tenant_id or 0, [])
+    categories = _category_cache.get(tenant_id, [])
     for cat in categories:
         if cat.startswith(prefix):
             return cat
@@ -198,7 +195,7 @@ def memory_cart_to_summary(context, tenant_id=None):
     Returns list of tuples: (product_id, item_name, price, qty)
     """
     _refresh_cache_if_needed(tenant_id)
-    products = _product_cache.get(tenant_id or 0, {})
+    products = _product_cache.get(tenant_id, {})
     cart = get_memory_cart(context)
     items = []
     for product_id, qty in cart.items():
@@ -410,7 +407,7 @@ def build_cash_text(grand_total, cash_data):
     return text
 
 
-def build_categories_keyboard(tenant_id=None):
+def build_categories_keyboard(tenant_id=None, is_customer=False):
     """Build the inline keyboard for categories (uses cache)."""
     categories = get_cached_categories(tenant_id)
 
@@ -418,9 +415,8 @@ def build_categories_keyboard(tenant_id=None):
     # Display 2 categories per row
     row = []
     for cat in categories:
-        # cat is already a string (e.g. "Sembako"), NOT a tuple
-        # Using a short callback data to avoid Telegram's 64 byte limit
-        cb_data = f"cat_{cat[:20]}"
+        cb_prefix = "ccat_" if is_customer else "cat_"
+        cb_data = f"{cb_prefix}{cat[:20]}"
         row.append(InlineKeyboardButton(cat, callback_data=cb_data))
         if len(row) == 2:
             keyboard.append(row)
@@ -428,12 +424,15 @@ def build_categories_keyboard(tenant_id=None):
     if row:
         keyboard.append(row)
 
-    keyboard.append([InlineKeyboardButton(
-        "✅ Selesai Memilih", callback_data="done_ordering")])
+    if not is_customer:
+        keyboard.append([InlineKeyboardButton("✅ Selesai Memilih", callback_data="done_ordering")])
+    else:
+        keyboard.append([InlineKeyboardButton("🔙 Kembali", callback_data="back_to_main")])
+        
     return InlineKeyboardMarkup(keyboard)
 
 
-def build_products_keyboard(category_prefix, page=1, tenant_id=None):
+def build_products_keyboard(category_prefix, page=1, tenant_id=None, is_customer=False):
     """Build the inline keyboard for products in a category with pagination (uses cache)."""
     category = get_full_category_name(category_prefix, tenant_id)
 
@@ -458,54 +457,36 @@ def build_products_keyboard(category_prefix, page=1, tenant_id=None):
         else:
             label = f"{p['item_name']} - Rp{p['price']:,}"
             
-        keyboard.append([InlineKeyboardButton(label, callback_data=f"noop")])
-        keyboard.append([
-            InlineKeyboardButton(
-                "➖", callback_data=f"rem_{p['id']}_{category_prefix}_{page}"),
-            InlineKeyboardButton(
-                "➕ Tambah", callback_data=f"add_{p['id']}_{category_prefix}_{page}")
-        ])
+        if is_customer:
+            keyboard.append([InlineKeyboardButton(label, callback_data=f"cprod_{p['id']}")])
+        else:
+            keyboard.append([InlineKeyboardButton(label, callback_data=f"noop")])
+            keyboard.append([
+                InlineKeyboardButton("➖", callback_data=f"rem_{p['id']}_{category_prefix}_{page}"),
+                InlineKeyboardButton("➕ Tambah", callback_data=f"add_{p['id']}_{category_prefix}_{page}")
+            ])
 
     # Pagination Row
     nav_row = []
+    cb_page = "cpage_" if is_customer else "page_"
     if page > 1:
-        nav_row.append(InlineKeyboardButton(
-            "⬅️ Prev", callback_data=f"page_{category_prefix}_{page-1}"))
+        nav_row.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"{cb_page}{category_prefix}_{page-1}"))
     if page < total_pages:
-        nav_row.append(InlineKeyboardButton(
-            "Next ➡️", callback_data=f"page_{category_prefix}_{page+1}"))
+        nav_row.append(InlineKeyboardButton("Next ➡️", callback_data=f"{cb_page}{category_prefix}_{page+1}"))
     if nav_row:
         keyboard.append(nav_row)
 
     # Back to Categories Row
-    keyboard.append([InlineKeyboardButton(
-        "🔙 Kembali ke Kategori", callback_data="back_to_cat")])
-    keyboard.append([InlineKeyboardButton(
-        "✅ Selesai Memilih", callback_data="done_ordering")])
+    cb_back = "cback_to_cat" if is_customer else "back_to_cat"
+    keyboard.append([InlineKeyboardButton("🔙 Kembali ke Kategori", callback_data=cb_back)])
+    
+    if not is_customer:
+        keyboard.append([InlineKeyboardButton("✅ Selesai Memilih", callback_data="done_ordering")])
 
     return InlineKeyboardMarkup(keyboard), category
 
 
 # --- Handler Functions ---
-
-def _build_main_menu_keyboard(is_owner_user=False):
-    """Build the main menu inline keyboard."""
-    kb = [
-        [InlineKeyboardButton("🛒 Mulai Transaksi", callback_data="main_transaksi")],
-        [InlineKeyboardButton("📦 Stok Barang", callback_data="stk_menu"), 
-         InlineKeyboardButton("📊 Laporan", callback_data="main_laporan")],
-    ]
-    if is_owner_user:
-        kb.append([
-            InlineKeyboardButton("🏷️ Promo", callback_data="main_promo"), 
-            InlineKeyboardButton("🗓️ Jadwal", callback_data="main_jadwal")
-        ])
-        kb.append([
-            InlineKeyboardButton("📦 Produk", callback_data="prod_menu"), 
-            InlineKeyboardButton("⚙️ Panel Owner", callback_data="main_panel"), 
-            # We can use web_app for dashboard later
-        ])
-    return InlineKeyboardMarkup(kb)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -522,6 +503,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Keep username/full_name up-to-date for registered users
     sync_user_info(user_id, tg_user.username, tg_user.full_name)
+
+    # Handle deep link (e.g. /start toko_1)
+    if context.args and len(context.args) > 0:
+        token = context.args[0]
+        if token.startswith("toko_"):
+            success, msg = validate_and_activate_token(
+                user_id, token, tg_user.username, tg_user.full_name
+            )
+            if success:
+                await update.message.reply_text(msg)
+            else:
+                await update.message.reply_text(msg)
 
     if not is_registered(user_id):
         # Unregistered — show onboarding instructions
@@ -552,24 +545,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _refresh_cache_if_needed()
     load_db_cart_to_memory(user_id, context)
 
-    if auth_is_owner(user_id):
-        from auth import get_store_name
-        store_name = get_store_name(user_id) or "Toko Kamu"
-        await update.message.reply_text(
-            f"👋 Halo, *{tg_user.first_name}*!\n"
-            f"🏪 Toko: *{store_name}*\n\n"
-            f"Pilih menu di bawah ini:",
-            parse_mode="Markdown",
-            reply_markup=_build_main_menu_keyboard(is_owner_user=True)
-        )
-    else:
-        # Kasir
-        await update.message.reply_text(
-            f"👋 Halo, *{tg_user.first_name}*! 🏪\n\n"
-            f"Pilih menu di bawah ini:",
-            parse_mode="Markdown",
-            reply_markup=_build_main_menu_keyboard(is_owner_user=False)
-        )
+    from auth import get_store_name
+    store_name = get_store_name(user_id) or "Toko Kamu"
+    
+    await update.message.reply_text(
+        f"👋 Halo, *{tg_user.first_name}*!\n"
+        f"🏪 Toko: *{store_name}*\n\n"
+        f"Pilih menu di bawah ini:",
+        parse_mode="Markdown",
+        reply_markup=build_main_menu_keyboard(user_id=user_id)
+    )
 
 
 async def handler_mulai_inline(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -609,6 +594,65 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "noop":
         await query.answer()
         return
+
+    # --- Customer Catalog Handlers ---
+    if data == "customer_katalog":
+        await query.answer()
+        tenant_id = get_tenant_id(user_id)
+        reply_markup = build_categories_keyboard(tenant_id=tenant_id, is_customer=True)
+        await query.edit_message_text(
+            "🛒 *Katalog Produk*\\n\\nPilih kategori produk di bawah ini untuk melihat daftar barang:",
+            reply_markup=reply_markup,
+            parse_mode="Markdown"
+        )
+        return
+
+    if data.startswith("ccat_"):
+        await query.answer()
+        tenant_id = get_tenant_id(user_id)
+        category_prefix = data.split("_")[1]
+        reply_markup, full_cat_name = build_products_keyboard(category_prefix, page=1, tenant_id=tenant_id, is_customer=True)
+        await query.edit_message_text(
+            f"🛒 *Kategori: {full_cat_name}*",
+            reply_markup=reply_markup,
+            parse_mode="Markdown"
+        )
+        return
+
+    if data.startswith("cpage_"):
+        await query.answer()
+        tenant_id = get_tenant_id(user_id)
+        parts = data.split("_")
+        category_prefix = parts[1]
+        page = int(parts[2])
+        reply_markup, full_cat_name = build_products_keyboard(category_prefix, page=page, tenant_id=tenant_id, is_customer=True)
+        await query.edit_message_text(
+            f"🛒 *Kategori: {full_cat_name}* (Page {page})",
+            reply_markup=reply_markup,
+            parse_mode="Markdown"
+        )
+        return
+
+    if data == "cback_to_cat":
+        await query.answer()
+        tenant_id = get_tenant_id(user_id)
+        reply_markup = build_categories_keyboard(tenant_id=tenant_id, is_customer=True)
+        await query.edit_message_text(
+            "🛒 *Katalog Produk*\\n\\nPilih kategori produk di bawah ini untuk melihat daftar barang:",
+            reply_markup=reply_markup,
+            parse_mode="Markdown"
+        )
+        return
+
+    if data.startswith("cprod_"):
+        await query.answer()
+        return
+
+    if data == "back_to_main":
+        await show_main_menu(update, context)
+        return
+
+    # --- End Customer Catalog Handlers ---
 
     # Handle "done ordering" — go directly to payment options
     if data == "done_ordering":
@@ -794,6 +838,7 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db = SessionLocal()
         new_trx = Transaction(
             user_id=user_id,
+            tenant_id=tenant_id,
             payment_method=payment_method,
             total_amount=calc["grand_total"],   # legacy compat
             subtotal=calc["subtotal"],
@@ -908,6 +953,7 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Save transaction with full breakdown
         new_trx = Transaction(
             user_id=user_id,
+            tenant_id=tenant_id,
             payment_method=payment_method,
             total_amount=calc["grand_total"],   # legacy compat
             subtotal=calc["subtotal"],
@@ -1005,7 +1051,7 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Quick feedback via callback answer
         _refresh_cache_if_needed(tenant_id)
-        products = _product_cache.get(tenant_id or 0, {})
+        products = _product_cache.get(tenant_id, {})
         product_name = products.get(product_id, {}).get("item_name", "")
         await query.answer(f"➕ {product_name}")
 
@@ -1028,7 +1074,7 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         remove_from_memory_cart(context, product_id)
 
         _refresh_cache_if_needed(tenant_id)
-        products = _product_cache.get(tenant_id or 0, {})
+        products = _product_cache.get(tenant_id, {})
         product_name = products.get(product_id, {}).get("item_name", "")
         await query.answer(f"➖ {product_name}")
 
@@ -1055,9 +1101,10 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cart_items = [(i.product_id, i.product_name, i.unit_price, i.quantity) for i in items]
         
         calc = calculate_cart_with_discounts(cart_items)
-        recommendations = get_recommendations(calc["purchased_categories"])
+        tenant_id = get_tenant_id(update.effective_user.id)
+        recommendations = get_recommendations(calc["purchased_categories"], tenant_id=tenant_id)
         date_str = trx.created_at.strftime("%d %B %Y %H:%M:%S")
-        store_schedule = get_upcoming_schedules_receipt()
+        store_schedule = get_upcoming_schedules_receipt(tenant_id=tenant_id)
         store_name = get_store_name(trx.user_id) or "TOKO KELONTONG"
         
         receipt_io = generate_receipt_image(
@@ -1072,7 +1119,8 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
             recommendations=recommendations,
             whatsapp_number=WHATSAPP_NUMBER,
             store_schedule=store_schedule,
-            store_name=store_name
+            store_name=store_name,
+            join_link=f"https://t.me/{context.bot.username}?start=toko_{tenant_id}"
         )
         db.close()
         
@@ -1194,8 +1242,8 @@ async def post_init(application):
     except Exception as e:
         logger.warning("Failed to set menu button (non-fatal): %s", e)
     
-    # Pre-load product cache at startup (demo tenant)
-    _refresh_cache_if_needed(0)
+    # Pre-load product cache at startup
+    _refresh_cache_if_needed(None)
 
 
 # --- Main Entry Point ---
@@ -1228,29 +1276,8 @@ if __name__ == "__main__":
     # Main menu inline routes (bridges to the commands)
     app.add_handler(CallbackQueryHandler(handler_mulai_inline, pattern="^main_transaksi$"))
     
-    # Simple bridge for other main menu buttons (treat them as text commands internally)
-    async def bridge_callback(update, context):
-        query = update.callback_query
-        await query.answer()
-        # Not perfect, but we can't easily trigger ConversationHandlers via simple callback 
-        # unless their entry_points accept these patterns. We'll tell the user to use commands.
-        cmd_map = {
-            "main_laporan": "/laporan",
-            "main_promo": "/promo",
-            "main_jadwal": "/jadwal",
-            "main_panel": "/panel"
-        }
-        cmd = cmd_map.get(query.data)
-        if cmd:
-            # Delete old message to clean up inline keyboard
-            await query.delete_message()
-            # Send prompt
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id, 
-                text=f"Untuk menu ini, silakan klik atau ketik: {cmd}"
-            )
-
-    app.add_handler(CallbackQueryHandler(bridge_callback, pattern="^main_(laporan|promo|jadwal|panel)$"))
+    # Global main menu callback
+    app.add_handler(CallbackQueryHandler(show_main_menu, pattern="^main_menu$"))
 
     # Voice confirmation callback handler (must be before generic button_click)
     app.add_handler(CallbackQueryHandler(handle_voice_callback, pattern="^vc_"))

@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 # STATUS CHECK
 # =============================================================================
 
-def get_today_schedule_status():
+def get_today_schedule_status(tenant_id=None):
     """
     Get the operational status for today based on active schedules.
     Returns a formatted string message to be sent to the user.
@@ -24,11 +24,15 @@ def get_today_schedule_status():
 
     # Find an active schedule that covers today.
     # Order by ID descending so the most recently added schedule overrides older ones.
-    schedule = db.query(StoreSchedule).filter(
+    query = db.query(StoreSchedule).filter(
         StoreSchedule.is_active == True,
         StoreSchedule.start_date <= today,
         StoreSchedule.end_date >= today
-    ).order_by(StoreSchedule.id.desc()).first()
+    )
+    if tenant_id:
+        query = query.filter(StoreSchedule.tenant_id == tenant_id)
+        
+    schedule = query.order_by(StoreSchedule.id.desc()).first()
 
     db.close()
 
@@ -49,18 +53,22 @@ def get_today_schedule_status():
     return text
 
 
-def get_upcoming_schedules_receipt():
+def get_upcoming_schedules_receipt(tenant_id=None):
     """Get a list of upcoming schedule strings for the printed receipt."""
     from datetime import timedelta
     today = date.today()
     future = today + timedelta(days=30)
     db = SessionLocal()
 
-    schedules = db.query(StoreSchedule).filter(
+    query = db.query(StoreSchedule).filter(
         StoreSchedule.is_active == True,
         StoreSchedule.end_date >= today,
         StoreSchedule.start_date <= future
-    ).order_by(StoreSchedule.start_date.asc()).limit(3).all()
+    )
+    if tenant_id:
+        query = query.filter(StoreSchedule.tenant_id == tenant_id)
+        
+    schedules = query.order_by(StoreSchedule.start_date.asc()).limit(3).all()
 
     db.close()
 
@@ -86,7 +94,7 @@ def get_upcoming_schedules_receipt():
 # CRUD OPERATIONS
 # =============================================================================
 
-def create_schedule(start_date, end_date, status, operating_hours=None, reason=None):
+def create_schedule(start_date, end_date, status, operating_hours=None, reason=None, tenant_id=None):
     """Create a new schedule period."""
     db = SessionLocal()
     
@@ -97,6 +105,7 @@ def create_schedule(start_date, end_date, status, operating_hours=None, reason=N
         operating_hours=operating_hours,
         reason=reason,
         is_active=True,
+        tenant_id=tenant_id,
     )
     db.add(schedule)
     db.commit()
@@ -107,13 +116,16 @@ def create_schedule(start_date, end_date, status, operating_hours=None, reason=N
     return schedule_id, "Jadwal operasional berhasil ditambahkan!"
 
 
-def list_schedules(active_only=True):
+def list_schedules(active_only=True, tenant_id=None):
     """List all store schedules."""
     db = SessionLocal()
     query = db.query(StoreSchedule)
 
     if active_only:
         query = query.filter(StoreSchedule.is_active == True)
+        
+    if tenant_id:
+        query = query.filter(StoreSchedule.tenant_id == tenant_id)
 
     schedules = query.order_by(StoreSchedule.id.desc()).all()
 

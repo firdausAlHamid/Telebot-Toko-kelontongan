@@ -34,7 +34,7 @@ def generate_receipt_image(
     trx_no, date_str, cart_items, total, payment_method,
     discount_details=None, total_discount=0, grand_total=None,
     recommendations=None, whatsapp_number=None, store_schedule=None,
-    store_name="TOKO KELONTONG"
+    store_name="TOKO KELONTONG", join_link=None
 ):
     """
     Generates a 58mm thermal-printer compatible receipt image.
@@ -205,6 +205,32 @@ def generate_receipt_image(
         qr_text = "Hubungi Kami via WhatsApp"
         draw.text(((WIDTH - get_text_width(qr_text, font_small)) / 2, y), qr_text, font=font_small, fill='black')
         y += 30
+        
+    # Join Link (Deep Link) QR Code
+    if join_link:
+        y += 20
+        qr2 = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=5,
+            border=1,
+        )
+        qr2.add_data(join_link)
+        qr2.make(fit=True)
+        
+        qr2_img = qr2.make_image(fill_color="black", back_color="white")
+        qr2_pil = qr2_img.get_image()
+        qr2_w, qr2_h = qr2_pil.size
+        
+        img.paste(qr2_pil, (int((WIDTH - qr2_w) / 2), y))
+        y += qr2_h + 10
+        
+        jl_text1 = "Scan untuk gabung jadi Member!"
+        jl_text2 = "Lihat Promo & Katalog di Telegram"
+        draw.text(((WIDTH - get_text_width(jl_text1, font_small)) / 2, y), jl_text1, font=font_small, fill='black')
+        y += 20
+        draw.text(((WIDTH - get_text_width(jl_text2, font_small)) / 2, y), jl_text2, font=font_small, fill='black')
+        y += 30
 
     # Crop image exactly to final height
     y += 20 # final padding
@@ -215,4 +241,77 @@ def generate_receipt_image(
     img.save(byte_io, 'PNG')
     byte_io.seek(0)
     
+    return byte_io
+
+
+def generate_promo_brochure_image(promos, store_name, join_link=None):
+    """Generates a receipt-style brochure for active promotions."""
+    WIDTH = 384
+    font, font_bold, font_title, font_small = _load_fonts()
+    
+    MAX_HEIGHT = 500 + (len(promos) * 150)
+    img = Image.new('RGB', (WIDTH, MAX_HEIGHT), color='white')
+    draw = ImageDraw.Draw(img)
+    y = 20
+    
+    def get_text_width(text, f):
+        try:
+            return draw.textlength(text, font=f)
+        except AttributeError:
+            return len(text) * (12 if f == font_bold else 10)
+
+    # Header
+    title = store_name
+    draw.text(((WIDTH - get_text_width(title, font_title)) / 2, y), title, font=font_title, fill='black')
+    y += 40
+    
+    subtitle = "=== BROSUR PROMO ==="
+    draw.text(((WIDTH - get_text_width(subtitle, font_bold)) / 2, y), subtitle, font=font_bold, fill='black')
+    y += 40
+    
+    draw.text((20, y), "-" * 32, font=font, fill='black')
+    y += 30
+    
+    if not promos:
+        text = "Belum ada promo saat ini."
+        draw.text(((WIDTH - get_text_width(text, font)) / 2, y), text, font=font, fill='black')
+        y += 40
+    else:
+        for p in promos:
+            wrapped_name = textwrap.wrap(p['product_name'], width=24)
+            for line in wrapped_name:
+                draw.text((20, y), line, font=font_bold, fill='black')
+                y += 25
+            
+            draw.text((20, y), f"Diskon: {p['discount_text']}", font=font, fill='black')
+            y += 25
+            draw.text((20, y), f"Berlaku: {p['start_date_str']} s/d {p['end_date_str']}", font=font_small, fill='black')
+            y += 25
+            if p.get('target_category') and p['target_category'].lower() != "semua":
+                draw.text((20, y), f"Khusus Beli: {p['target_category']}", font=font_small, fill='black')
+                y += 25
+            y += 20
+    
+    draw.text((20, y), "=" * 32, font=font, fill='black')
+    y += 30
+    
+    if join_link:
+        qr = qrcode.QRCode(version=1, box_size=5, border=1)
+        qr.add_data(join_link)
+        qr.make(fit=True)
+        qr_img = qr.make_image(fill_color="black", back_color="white").get_image()
+        qr_w, qr_h = qr_img.size
+        img.paste(qr_img, (int((WIDTH - qr_w) / 2), y))
+        y += qr_h + 10
+        
+        scan_text = "Scan untuk Gabung & Pesan!"
+        draw.text(((WIDTH - get_text_width(scan_text, font_small)) / 2, y), scan_text, font=font_small, fill='black')
+        y += 30
+
+    y += 20
+    img = img.crop((0, 0, WIDTH, y))
+    
+    byte_io = io.BytesIO()
+    img.save(byte_io, 'PNG')
+    byte_io.seek(0)
     return byte_io

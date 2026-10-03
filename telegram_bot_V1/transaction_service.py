@@ -46,7 +46,7 @@ def format_date_indo(d):
 # TRANSACTION HISTORY
 # =============================================================================
 
-def get_transaction_history(user_id=None, limit=10, offset=0, status="completed"):
+def get_transaction_history(user_id=None, limit=10, offset=0, status="completed", tenant_id=None):
     """
     Get transaction history, optionally filtered by user_id.
 
@@ -68,6 +68,9 @@ def get_transaction_history(user_id=None, limit=10, offset=0, status="completed"
 
     if status != "all":
         query = query.filter(Transaction.status == status)
+
+    if tenant_id:
+        query = query.filter(Transaction.tenant_id == tenant_id)
 
     total_count = query.count()
 
@@ -151,7 +154,7 @@ def get_transaction_detail(transaction_id):
 # VOID TRANSACTION
 # =============================================================================
 
-def void_transaction(transaction_id, reason="Dibatalkan oleh admin"):
+def void_transaction(transaction_id, reason="Dibatalkan oleh admin", tenant_id=None):
     """
     Void (soft-cancel) a transaction.
     Only today's completed transactions can be voided.
@@ -165,6 +168,10 @@ def void_transaction(transaction_id, reason="Dibatalkan oleh admin"):
     if not trx:
         db.close()
         return False, "Transaksi tidak ditemukan."
+
+    if tenant_id and trx.tenant_id != tenant_id:
+        db.close()
+        return False, "Transaksi bukan dari toko ini."
 
     if trx.status == "voided":
         db.close()
@@ -191,7 +198,7 @@ def void_transaction(transaction_id, reason="Dibatalkan oleh admin"):
 # SALES REPORTS
 # =============================================================================
 
-def get_daily_summary(target_date=None):
+def get_daily_summary(target_date=None, tenant_id=None):
     """
     Get sales summary for a specific date.
 
@@ -208,12 +215,14 @@ def get_daily_summary(target_date=None):
     start_dt = datetime.combine(target_date, datetime.min.time())
     end_dt = start_dt + timedelta(days=1)
 
-    # Completed transactions
-    completed = db.query(Transaction).filter(
+    query = db.query(Transaction).filter(
         Transaction.created_at >= start_dt,
         Transaction.created_at < end_dt,
         Transaction.status == "completed"
-    ).all()
+    )
+    if tenant_id:
+        query = query.filter(Transaction.tenant_id == tenant_id)
+    completed = query.all()
 
     total_transactions = len(completed)
     total_revenue = sum(t.grand_total or t.total_amount or 0 for t in completed)
@@ -230,11 +239,14 @@ def get_daily_summary(target_date=None):
         payment_breakdown[method]["amount"] += t.grand_total or t.total_amount or 0
 
     # Voided transactions
-    voided = db.query(Transaction).filter(
+    v_query = db.query(Transaction).filter(
         Transaction.created_at >= start_dt,
         Transaction.created_at < end_dt,
         Transaction.status == "voided"
-    ).all()
+    )
+    if tenant_id:
+        v_query = v_query.filter(Transaction.tenant_id == tenant_id)
+    voided = v_query.all()
 
     voided_count = len(voided)
     voided_amount = sum(t.grand_total or t.total_amount or 0 for t in voided)
@@ -254,7 +266,7 @@ def get_daily_summary(target_date=None):
     }
 
 
-def get_period_summary(start_date, end_date):
+def get_period_summary(start_date, end_date, tenant_id=None):
     """
     Get sales summary for a date range.
     Useful for weekly/monthly reports.
@@ -267,11 +279,14 @@ def get_period_summary(start_date, end_date):
     start_dt = datetime.combine(start_date, datetime.min.time())
     end_dt = datetime.combine(end_date, datetime.min.time()) + timedelta(days=1)
 
-    completed = db.query(Transaction).filter(
+    query = db.query(Transaction).filter(
         Transaction.created_at >= start_dt,
         Transaction.created_at < end_dt,
         Transaction.status == "completed"
-    ).all()
+    )
+    if tenant_id:
+        query = query.filter(Transaction.tenant_id == tenant_id)
+    completed = query.all()
 
     total_transactions = len(completed)
     total_revenue = sum(t.grand_total or t.total_amount or 0 for t in completed)
@@ -286,11 +301,14 @@ def get_period_summary(start_date, end_date):
         payment_breakdown[method]["count"] += 1
         payment_breakdown[method]["amount"] += t.grand_total or t.total_amount or 0
 
-    voided = db.query(Transaction).filter(
+    v_query = db.query(Transaction).filter(
         Transaction.created_at >= start_dt,
         Transaction.created_at < end_dt,
         Transaction.status == "voided"
-    ).all()
+    )
+    if tenant_id:
+        v_query = v_query.filter(Transaction.tenant_id == tenant_id)
+    voided = v_query.all()
 
     db.close()
 
@@ -309,7 +327,7 @@ def get_period_summary(start_date, end_date):
     }
 
 
-def get_top_products(start_date=None, end_date=None, limit=10):
+def get_top_products(start_date=None, end_date=None, limit=10, tenant_id=None):
     """
     Get best-selling products by quantity for a period.
 
@@ -326,7 +344,7 @@ def get_top_products(start_date=None, end_date=None, limit=10):
 
     db = SessionLocal()
 
-    results = db.query(
+    query = db.query(
         TransactionItem.product_name,
         func.sum(TransactionItem.quantity).label("total_qty"),
         func.sum(TransactionItem.subtotal).label("total_revenue")
@@ -336,7 +354,12 @@ def get_top_products(start_date=None, end_date=None, limit=10):
         Transaction.created_at >= start_dt,
         Transaction.created_at < end_dt,
         Transaction.status == "completed"
-    ).group_by(
+    )
+    
+    if tenant_id:
+        query = query.filter(Transaction.tenant_id == tenant_id)
+        
+    results = query.group_by(
         TransactionItem.product_name
     ).order_by(
         desc("total_qty")

@@ -170,6 +170,7 @@ class Promotion(Base):
     __tablename__ = "promotions"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=True)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
     target_category = Column(String(100), nullable=True)   # category to recommend TO
     discount_type = Column(String(20), nullable=False)      # "percentage" or "fixed_amount"
@@ -186,6 +187,7 @@ class StoreSchedule(Base):
     __tablename__ = "store_schedules"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=True)
     start_date = Column(Date, nullable=False)
     end_date = Column(Date, nullable=False)
     status = Column(String(20), nullable=False)        # "Buka" or "Tutup"

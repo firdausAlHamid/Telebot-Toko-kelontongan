@@ -13,7 +13,7 @@ from telegram.ext import (
     MessageHandler, ConversationHandler, filters
 )
 
-from auth import is_kasir, is_owner
+from auth import require, get_tenant_id, can
 from transaction_service import (
     get_daily_summary, get_period_summary, get_top_products,
     get_transaction_history, get_transaction_detail,
@@ -31,21 +31,16 @@ logger = logging.getLogger(__name__)
 # HELPERS
 # =============================================================================
 
-def is_admin(update: Update) -> bool:
-    """Check if the user has admin-level access (owner or kasir)."""
-    return is_kasir(update.effective_user.id)
+# No longer needed, using RBAC require
 
 
 # =============================================================================
 # /laporan — SALES REPORT
 # =============================================================================
 
+@require("report:view_shift")
 async def laporan_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Entry point: /laporan command — shows report period selection."""
-    if not is_admin(update):
-        if update.message:
-            await update.message.reply_text("⛔ Akses ditolak. Hanya admin.")
-        return ConversationHandler.END
 
     keyboard = [
         [InlineKeyboardButton("📊 Hari Ini", callback_data="rpt_today")],
@@ -72,6 +67,7 @@ async def laporan_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_report_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle report period selection."""
+    tenant_id = get_tenant_id(update.effective_user.id)
     query = update.callback_query
     await query.answer()
     data = query.data
@@ -82,35 +78,35 @@ async def handle_report_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
     today = date.today()
 
     if data == "rpt_today":
-        summary = get_daily_summary(today)
+        summary = get_daily_summary(today, tenant_id=tenant_id)
         title = f"📊 Laporan Hari Ini — {summary['date_str']}"
         text = _build_summary_text(title, summary)
 
     elif data == "rpt_yesterday":
         yesterday = today - timedelta(days=1)
-        summary = get_daily_summary(yesterday)
+        summary = get_daily_summary(yesterday, tenant_id=tenant_id)
         title = f"📊 Laporan Kemarin — {summary['date_str']}"
         text = _build_summary_text(title, summary)
 
     elif data == "rpt_week":
         start = today - timedelta(days=today.weekday())  # Monday
-        summary = get_period_summary(start, today)
+        summary = get_period_summary(start, today, tenant_id=tenant_id)
         title = f"📊 Laporan Minggu Ini\n📅 {summary['start_date_str']} — {summary['end_date_str']}"
         text = _build_summary_text(title, summary)
 
     elif data == "rpt_month":
         start = today.replace(day=1)
-        summary = get_period_summary(start, today)
+        summary = get_period_summary(start, today, tenant_id=tenant_id)
         title = f"📊 Laporan Bulan Ini\n📅 {summary['start_date_str']} — {summary['end_date_str']}"
         text = _build_summary_text(title, summary)
 
     elif data == "rpt_top_today":
-        top = get_top_products(today, today, limit=10)
+        top = get_top_products(today, today, limit=10, tenant_id=tenant_id)
         text = _build_top_products_text("🏆 Produk Terlaris Hari Ini", top)
 
     elif data == "rpt_top_month":
         start = today.replace(day=1)
-        top = get_top_products(start, today, limit=10)
+        top = get_top_products(start, today, limit=10, tenant_id=tenant_id)
         text = _build_top_products_text("🏆 Produk Terlaris Bulan Ini", top)
 
     else:
@@ -183,19 +179,17 @@ def _build_top_products_text(title, products):
 # /void — VOID TRANSACTION
 # =============================================================================
 
+@require("trx:void")
 async def void_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Entry point: /void command — shows today's transactions for voiding."""
-    if not is_admin(update):
-        if update.message:
-            await update.message.reply_text("⛔ Akses ditolak. Hanya admin.")
-        return ConversationHandler.END
 
     return await _show_void_list(update, context)
 
 
 async def _show_void_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show today's completed transactions for void selection."""
-    transactions, total = get_transaction_history(status="completed", limit=15)
+    tenant_id = get_tenant_id(update.effective_user.id)
+    transactions, total = get_transaction_history(status="completed", limit=15, tenant_id=tenant_id)
 
     # Filter only today's transactions
     today_start = date.today()
@@ -312,15 +306,17 @@ async def void_cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 # /riwayat — TRANSACTION HISTORY (accessible by everyone)
 # =============================================================================
 
+@require("history:view_self")
 async def riwayat_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show last 5 transactions for the current user (or all for admin)."""
     user_id = update.effective_user.id
+    tenant_id = get_tenant_id(user_id)
     # Owner sees all transactions; kasir sees only their own
-    if is_owner(user_id):
-        transactions, total = get_transaction_history(limit=10)
+    if can(user_id, "history:view_tenant"):
+        transactions, total = get_transaction_history(limit=10, tenant_id=tenant_id)
         title = f"📜 *Riwayat Transaksi* (semua — {total} total)"
     else:
-        transactions, total = get_transaction_history(user_id=user_id, limit=5)
+        transactions, total = get_transaction_history(user_id=user_id, limit=5, tenant_id=tenant_id)
         title = f"📜 *Riwayat Transaksi Kamu* ({total} total)"
 
     if not transactions:
@@ -413,6 +409,7 @@ def get_report_conv_handler():
     return ConversationHandler(
         entry_points=[
             CommandHandler("laporan", laporan_command),
+            CallbackQueryHandler(laporan_command, pattern="^main_laporan$"),
         ],
         states={
             REPORT_MENU: [

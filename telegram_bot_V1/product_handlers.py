@@ -19,7 +19,8 @@ from telegram.ext import (
 )
 
 from database import SessionLocal, Product
-from auth import is_owner, get_tenant_id
+from auth import require, get_tenant_id
+from menu_helpers import show_main_menu
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +126,7 @@ def _product_menu_keyboard():
     ])
 
 
+@require("product:manage")
 async def product_menu_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Entry point — called by /produk or callback."""
     query = update.callback_query
@@ -451,9 +453,13 @@ async def product_del_product(update: Update, context: ContextTypes.DEFAULT_TYPE
     db = SessionLocal()
     product = db.query(Product).filter(Product.id == product_id).first()
     if product:
-        db.delete(product)
-        db.commit()
-        msg = f"✅ *Produk berhasil dihapus!*\n\n📦 {product.item_name} (#{product.id})"
+        try:
+            db.delete(product)
+            db.commit()
+            msg = f"✅ *Produk berhasil dihapus!*\n\n📦 {product.item_name} (#{product.id})"
+        except Exception as e:
+            db.rollback()
+            msg = f"❌ *Gagal menghapus!*\n\nProduk '{product.item_name}' sudah tercatat di transaksi sebelumnya. Ubah nama atau jadikan stok 0 jika tidak dipakai lagi."
     else:
         msg = "Produk tidak ditemukan."
     db.close()
@@ -560,7 +566,7 @@ async def product_view_product(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def main_menu_return(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Return to main menu."""
-    return ConversationHandler.END
+    return await show_main_menu(update, context)
 
 
 async def cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):

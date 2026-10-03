@@ -20,7 +20,8 @@ from telegram.ext import (
 )
 
 from database import SessionLocal, Product, StockMovement
-from auth import is_kasir, is_owner, get_tenant_id
+from auth import get_tenant_id, can, require
+from menu_helpers import show_main_menu
 
 logger = logging.getLogger(__name__)
 
@@ -120,31 +121,35 @@ def _products_keyboard(prefix: str, category_short: str, tenant_id=None, page: i
     return InlineKeyboardMarkup(keyboard), full_cat
 
 
-def _stock_menu_keyboard():
-    return InlineKeyboardMarkup([
+def _stock_menu_keyboard(user_id: int):
+    kb = [
         [InlineKeyboardButton("📥 Barang Masuk", callback_data="stk_in"),
          InlineKeyboardButton("📤 Barang Keluar", callback_data="stk_out")],
         [InlineKeyboardButton("📋 Lihat Stok", callback_data="stk_view"),
          InlineKeyboardButton("⚠️ Stok Rendah", callback_data="stk_low")],
-        [InlineKeyboardButton("🤝 Konsinyasi", callback_data="stk_consign")],
-        [InlineKeyboardButton("🔙 Menu Utama", callback_data="main_menu")],
-    ])
+    ]
+    if can(user_id, "consign:manage"):
+        kb.append([InlineKeyboardButton("🤝 Konsinyasi", callback_data="stk_consign")])
+    kb.append([InlineKeyboardButton("🔙 Menu Utama", callback_data="main_menu")])
+    return InlineKeyboardMarkup(kb)
 
 
+@require("stock:view")
 async def stock_menu_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Entry point — called by main menu inline button."""
     query = update.callback_query
+    user_id = update.effective_user.id
     if query:
         await query.answer()
         await query.edit_message_text(
             "📦 *Manajemen Stok*\n\nPilih menu:",
-            reply_markup=_stock_menu_keyboard(),
+            reply_markup=_stock_menu_keyboard(user_id),
             parse_mode="Markdown"
         )
     else:
         await update.message.reply_text(
             "📦 *Manajemen Stok*\n\nPilih menu:",
-            reply_markup=_stock_menu_keyboard(),
+            reply_markup=_stock_menu_keyboard(user_id),
             parse_mode="Markdown"
         )
     return STOCK_MENU
@@ -455,6 +460,7 @@ async def stock_view_cat_select(update: Update, context: ContextTypes.DEFAULT_TY
         return STOCK_VIEW_CAT
 
     cat_short = data[6:]  # strip "sview_"
+    context.user_data["stk_cat"] = cat_short
     kb, full_cat = _products_keyboard("sview", cat_short, tenant_id)
     await query.edit_message_text(
         f"📋 *Stok — {full_cat}*\n\n",
@@ -469,13 +475,22 @@ async def stock_view_prod(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     tenant_id = get_tenant_id(update.effective_user.id)
 
-    if data == "sview_prod_back":
+    if data == "sview_back":
         kb = _categories_keyboard("sview", tenant_id)
         await query.edit_message_text("Pilih kategori:", reply_markup=kb, parse_mode="Markdown")
         return STOCK_VIEW_CAT
 
+    if data == "sview_prod_back":
+        cat_short = context.user_data.get("stk_cat", "")
+        kb, full_cat = _products_keyboard("sview", cat_short, tenant_id)
+        await query.edit_message_text(
+            f"📋 *Stok — {full_cat}*\n\n",
+            reply_markup=kb, parse_mode="Markdown"
+        )
+        return STOCK_VIEW_PROD
+
     if "_pg_" in data:
-        parts = data.replace("sview_prod_", "").split("_pg_")
+        parts = data.replace("sview_", "").split("_pg_")
         cat_short = parts[0]
         page = int(parts[1])
         kb, full_cat = _products_keyboard("sview", cat_short, tenant_id, page)
@@ -746,9 +761,7 @@ async def stock_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def main_menu_return(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Return to main menu — ends stock conversation."""
-    query = update.callback_query
-    await query.answer()
-    return ConversationHandler.END
+    return await show_main_menu(update, context)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -813,10 +826,11 @@ def get_stock_handler():
                 stock_menu_cb, cancel_cb,
             ],
             STOCK_VIEW_PROD: [
+                CallbackQueryHandler(stock_view_prod, pattern="^sview_back"),
                 CallbackQueryHandler(stock_view_prod, pattern="^sview_prod_back"),
-                CallbackQueryHandler(stock_view_prod, pattern="^sview_prod_.*_pg_"),
-                CallbackQueryHandler(stock_view_prod, pattern="^sview_prod_"),
-                cancel_cb,
+                CallbackQueryHandler(stock_view_prod, pattern="^sview_.*_pg_"),
+                CallbackQueryHandler(stock_view_prod, pattern="^sview_p_"),
+                stock_menu_cb, cancel_cb,
             ],
             CONSIGN_CAT: [
                 CallbackQueryHandler(consign_cat_select, pattern="^scon_back"),

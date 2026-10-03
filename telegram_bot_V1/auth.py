@@ -48,19 +48,64 @@ def get_role(telegram_id: int) -> str:
     return user.role if user else "unknown"
 
 
+PERMISSIONS = {
+    "trx:create": ["owner", "kasir"],
+    "stock:view": ["owner", "kasir"],
+    "stock:manage": ["owner", "kasir"],
+    "consign:manage": ["owner"],
+    "product:manage": ["owner"],
+    "product:view": ["owner", "kasir", "customer"],
+    "promo:manage": ["owner"],
+    "promo:view": ["owner", "kasir", "customer"],
+    "schedule:manage": ["owner"],
+    "schedule:view": ["owner", "kasir", "customer"],
+    "trx:void": ["owner"],
+    "report:view_tenant": ["owner"],
+    "report:view_shift": ["owner", "kasir"],
+    "history:view_tenant": ["owner"],
+    "history:view_self": ["owner", "kasir"],
+    "voice:manage": ["owner"],
+    "panel:manage": ["owner"],
+}
+
+def can(telegram_id: int, permission: str) -> bool:
+    """Check if the user has a specific permission based on their role."""
+    role = get_role(telegram_id)
+    allowed_roles = PERMISSIONS.get(permission, [])
+    return role in allowed_roles
+
+from functools import wraps
+from telegram import Update
+from telegram.ext import ConversationHandler
+
+def require(permission: str):
+    """Decorator to enforce RBAC permissions on handler functions."""
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(update: Update, context, *args, **kwargs):
+            user_id = update.effective_user.id
+            if not can(user_id, permission):
+                text = "⛔ Akses ditolak. Anda tidak memiliki izin."
+                if update.callback_query:
+                    await update.callback_query.answer(text, show_alert=True)
+                elif update.message:
+                    await update.message.reply_text(text)
+                return ConversationHandler.END
+            return await func(update, context, *args, **kwargs)
+        return wrapper
+    return decorator
+
 def is_kasir(telegram_id: int) -> bool:
-    """True if role is kasir OR owner (owners can also use all kasir features)."""
+    """Legacy check — use can(user_id, '...') instead."""
     return get_role(telegram_id) in ("kasir", "owner")
 
-
 def is_owner(telegram_id: int) -> bool:
-    """True ONLY if role is owner (can manage staff & view full reports)."""
+    """Legacy check — use can(user_id, '...') instead."""
     return get_role(telegram_id) == "owner"
 
-
 def is_registered(telegram_id: int) -> bool:
-    """True if the user has any active role (owner or kasir)."""
-    return get_role(telegram_id) in ("owner", "kasir")
+    """True if the user has any active role (owner, kasir, or customer)."""
+    return get_role(telegram_id) in ("owner", "kasir", "customer")
 
 
 def get_tenant_id(telegram_id: int):
@@ -122,12 +167,43 @@ def validate_and_activate_token(
     """
     db = SessionLocal()
 
-    # Check if user already registered
+    # Check if user already registered with a valid role
     existing = db.query(BotUser).filter(BotUser.telegram_id == telegram_id).first()
-    if existing and existing.is_active:
+    if existing and existing.is_active and existing.role in ("owner", "kasir"):
         db.close()
         role_label = "Pemilik Toko (Owner)" if existing.role == "owner" else "Kasir"
         return False, f"Akun kamu sudah aktif sebagai *{role_label}*. Tidak perlu input token lagi."
+
+    # Support for customer deep linking (e.g., toko_1)
+    if token_str.strip().lower().startswith("toko_"):
+        tenant_id_str = token_str.strip().lower().split("_")[1]
+        try:
+            tenant_id = int(tenant_id_str)
+            tenant = db.query(Tenant).filter(Tenant.id == tenant_id, Tenant.is_active == True).first()
+            if not tenant:
+                db.close()
+                return False, "❌ Toko tidak ditemukan."
+            
+            if existing:
+                existing.role = "customer"
+                existing.tenant_id = tenant_id
+                existing.is_active = True
+                existing.updated_at = datetime.now()
+            else:
+                new_user = BotUser(
+                    telegram_id=telegram_id,
+                    telegram_username=username,
+                    full_name=full_name,
+                    role="customer",
+                    tenant_id=tenant_id,
+                    is_active=True
+                )
+                db.add(new_user)
+            db.commit()
+            db.close()
+            return True, f"✅ Berhasil masuk sebagai Customer di {tenant.name}!"
+        except ValueError:
+            pass
 
     # Find the token
     token = db.query(RegistrationToken).filter(
@@ -157,17 +233,26 @@ def validate_and_activate_token(
             return False, "❌ Toko yang terkait dengan token ini sudah tidak aktif."
 
     # Activate the user
-    user = BotUser(
-        telegram_id=telegram_id,
-        telegram_username=username,
-        full_name=full_name,
-        role=token.role,
-        tenant_id=token.tenant_id,
-        added_by=token.created_by,
-        is_active=True,
-        token_validated_at=datetime.now(),
-    )
-    db.add(user)
+    if existing:
+        existing.telegram_username = username
+        existing.full_name = full_name
+        existing.role = token.role
+        existing.tenant_id = token.tenant_id
+        existing.added_by = token.created_by
+        existing.is_active = True
+        existing.token_validated_at = datetime.now()
+    else:
+        user = BotUser(
+            telegram_id=telegram_id,
+            telegram_username=username,
+            full_name=full_name,
+            role=token.role,
+            tenant_id=token.tenant_id,
+            added_by=token.created_by,
+            is_active=True,
+            token_validated_at=datetime.now(),
+        )
+        db.add(user)
 
     # Mark token as used
     token.is_used = True
@@ -233,14 +318,23 @@ def generate_kasir_token(owner_telegram_id: int) -> tuple[bool, str]:
 # USER MANAGEMENT
 # ==============================================================================
 
-def deactivate_user(target_telegram_id: int) -> tuple[bool, str]:
-    """Soft-deactivate a user (is_active = False)."""
+def deactivate_user(target_telegram_id: int, owner_telegram_id: int) -> tuple[bool, str]:
+    """Soft-deactivate a user (is_active = False), ensuring they belong to the owner's tenant."""
     db = SessionLocal()
+    owner = db.query(BotUser).filter(BotUser.telegram_id == owner_telegram_id, BotUser.role == "owner").first()
+    if not owner:
+        db.close()
+        return False, "Anda bukan owner."
+
     user = db.query(BotUser).filter(BotUser.telegram_id == target_telegram_id).first()
 
     if not user:
         db.close()
         return False, "User tidak ditemukan."
+        
+    if user.tenant_id != owner.tenant_id:
+        db.close()
+        return False, "User ini bukan kasir di toko Anda."
 
     if user.role == "owner":
         db.close()
