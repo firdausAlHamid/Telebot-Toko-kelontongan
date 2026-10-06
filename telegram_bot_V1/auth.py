@@ -201,7 +201,7 @@ def validate_and_activate_token(
                 db.add(new_user)
             db.commit()
             db.close()
-            return True, f"✅ Berhasil masuk sebagai Customer di {tenant.name}!"
+            return True, f"✅ Berhasil masuk sebagai Customer di {tenant.store_name}!"
         except ValueError:
             pass
 
@@ -253,6 +253,12 @@ def validate_and_activate_token(
             token_validated_at=datetime.now(),
         )
         db.add(user)
+
+    # Owner token → catat sebagai pemilik tenant
+    if token.role == "owner" and token.tenant_id:
+        t = db.query(Tenant).filter(Tenant.id == token.tenant_id).first()
+        if t:
+            t.owner_id = telegram_id
 
     # Mark token as used
     token.is_used = True

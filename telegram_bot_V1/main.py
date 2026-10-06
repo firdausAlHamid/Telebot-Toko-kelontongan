@@ -63,6 +63,7 @@ from auth import (
     is_owner as auth_is_owner, validate_and_activate_token, get_tenant_id, get_store_name
 )
 from menu_helpers import build_main_menu_keyboard, show_main_menu
+from dev_handlers import get_dev_handlers
 import math
 import datetime
 import os
@@ -1261,6 +1262,8 @@ if __name__ == "__main__":
     )
 
     # Order matters: more specific first
+    for h in get_dev_handlers():                   # /devrole (testing, dev only)
+        app.add_handler(h)
     app.add_handler(get_stock_handler())          # /stock menu (stk_menu)
     app.add_handler(get_product_handler())        # /produk menu
     app.add_handler(get_owner_handler())          # /panel
