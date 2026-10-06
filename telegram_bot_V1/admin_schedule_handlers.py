@@ -37,19 +37,26 @@ logger = logging.getLogger(__name__)
 # MAIN MENU
 # =============================================================================
 
-@require("schedule:manage")
 async def sched_menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Entry point: /jadwal command — shows admin schedule menu."""
+    """Entry point: /jadwal command — shows admin schedule menu or customer schedule."""
+    user_id = update.effective_user.id
+    from auth import can
 
-    keyboard = [
-        [InlineKeyboardButton("➕ Tambah Jadwal / Libur", callback_data="as_add")],
-        [InlineKeyboardButton("📋 Daftar Jadwal Aktif", callback_data="as_list")],
-        [InlineKeyboardButton("🗑 Hapus Jadwal", callback_data="as_del")],
-    ]
-
-    text = "🗓️ *Menu Jadwal Operasional*\n\nPilih aksi di bawah:"
+    if can(user_id, "schedule:manage"):
+        keyboard = [
+            [InlineKeyboardButton("➕ Tambah Jadwal / Libur", callback_data="as_add")],
+            [InlineKeyboardButton("📋 Daftar Jadwal Aktif", callback_data="as_list")],
+            [InlineKeyboardButton("🗑 Hapus Jadwal", callback_data="as_del")],
+        ]
+        text = "🗓️ *Menu Jadwal Operasional*\n\nPilih aksi di bawah:"
+    else:
+        keyboard = [
+            [InlineKeyboardButton("📋 Lihat Jadwal Toko", callback_data="as_list")]
+        ]
+        text = "🗓️ *Jadwal Toko*\n\nSilakan cek jadwal operasional kami:"
 
     if update.callback_query:
+        await update.callback_query.answer()
         await update.callback_query.edit_message_text(
             text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown"
         )

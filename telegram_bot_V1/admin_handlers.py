@@ -13,7 +13,7 @@ from telegram.ext import (
     MessageHandler, ConversationHandler, filters
 )
 
-from auth import require, get_tenant_id
+from auth import require, get_tenant_id, get_store_name
 from receipt_generator import generate_promo_brochure_image
 from database import SessionLocal, Product, Promotion
 from promotion_service import (
@@ -72,6 +72,7 @@ async def promo_menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         text = "🏷️ *Promo Spesial Untukmu!*\n\nCek daftar promo yang sedang berlangsung:"
 
     if update.callback_query:
+        await update.callback_query.answer()
         await update.callback_query.edit_message_text(
             text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown"
         )

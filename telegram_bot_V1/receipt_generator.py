@@ -314,4 +314,5 @@ def generate_promo_brochure_image(promos, store_name, join_link=None):
     byte_io = io.BytesIO()
     img.save(byte_io, 'PNG')
     byte_io.seek(0)
+    byte_io.name = "promo.png"
     return byte_io

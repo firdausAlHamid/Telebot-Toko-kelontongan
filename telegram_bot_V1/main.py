@@ -452,11 +452,11 @@ def build_products_keyboard(category_prefix, page=1, tenant_id=None, is_customer
         promo = promos.get(p["id"])
         if promo:
             if promo["discount_type"] == "percentage":
-                label = f"🏷️ {p['item_name']} - Rp{p['price']:,} (-{promo['discount_value']}%)"
+                label = f"🏷️ Rp{p['price']:,} (-{promo['discount_value']}%) | {p['item_name']}"
             else:
-                label = f"🏷️ {p['item_name']} - Rp{p['price']:,} (-Rp{promo['discount_value']:,})"
+                label = f"🏷️ Rp{p['price']:,} (-Rp{promo['discount_value']:,}) | {p['item_name']}"
         else:
-            label = f"{p['item_name']} - Rp{p['price']:,}"
+            label = f"Rp{p['price']:,} | {p['item_name']}"
             
         if is_customer:
             keyboard.append([InlineKeyboardButton(label, callback_data=f"cprod_{p['id']}")])
@@ -853,7 +853,8 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.add(new_trx)
         db.commit()
         db.refresh(new_trx)
-        trx_no = f"INV-{new_trx.id:06d}"
+        trx_id = new_trx.id
+        trx_no = f"INV-{trx_id:06d}"
 
         # Save invoice_no back to the transaction
         new_trx.invoice_no = trx_no
@@ -910,7 +911,7 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     change_text += f" Rp{denom:,}×{count}"
 
         keyboard = [
-            [InlineKeyboardButton("📄 Buat Struk", callback_data=f"receipt_{new_trx.id}")],
+            [InlineKeyboardButton("📄 Buat Struk", callback_data=f"receipt_{trx_id}")],
             [InlineKeyboardButton("🔙 Menu Utama", callback_data="back_to_catalog")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -968,7 +969,8 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.refresh(new_trx)
 
         # Generate sequential transaction number (e.g. INV-000001)
-        trx_no = f"INV-{new_trx.id:06d}"
+        trx_id = new_trx.id
+        trx_no = f"INV-{trx_id:06d}"
         new_trx.invoice_no = trx_no
 
         # Save transaction items (line-item snapshots) and deduct stock
@@ -1010,7 +1012,7 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         set_memory_cart(context, {})
 
         keyboard = [
-            [InlineKeyboardButton("📄 Buat Struk", callback_data=f"receipt_{new_trx.id}")],
+            [InlineKeyboardButton("📄 Buat Struk", callback_data=f"receipt_{trx_id}")],
             [InlineKeyboardButton("🔙 Menu Utama", callback_data="back_to_catalog")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
