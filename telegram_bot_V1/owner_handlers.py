@@ -55,14 +55,15 @@ async def _show_owner_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     store_name = get_store_name(user_id) or "Toko Kamu"
 
-    # Mini App URL
-    mini_app_url = f"{API_BASE_URL.rstrip('/')}/miniapp/"
+    # Mini App URLs
+    dashboard_url = f"{API_BASE_URL.rstrip('/')}/miniapp/dashboard.html"
+    store_url = f"{API_BASE_URL.rstrip('/')}/miniapp/index.html"
 
     keyboard = [
-        [InlineKeyboardButton(
-            "📊 Buka Dashboard",
-            web_app=WebAppInfo(url=mini_app_url)
-        )],
+        [
+            InlineKeyboardButton("📊 Dashboard POS", web_app=WebAppInfo(url=dashboard_url)),
+            InlineKeyboardButton("🛍️ Buka Toko", web_app=WebAppInfo(url=store_url))
+        ],
         [InlineKeyboardButton("🔑 Generate Token Kasir", callback_data="own_gen_token")],
         [InlineKeyboardButton("👥 Lihat Daftar Kasir",   callback_data="own_list_kasir")],
         [InlineKeyboardButton("❌ Nonaktifkan Kasir",     callback_data="own_deact_kasir")],

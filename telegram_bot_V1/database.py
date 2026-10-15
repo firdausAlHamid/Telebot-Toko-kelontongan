@@ -1,6 +1,6 @@
 from sqlalchemy import (
     create_engine, Column, Integer, String, BigInteger,
-    Date, DateTime, Boolean, ForeignKey
+    Date, DateTime, Boolean, ForeignKey, Text
 )
 from sqlalchemy.orm import declarative_base, sessionmaker
 from datetime import datetime
@@ -18,12 +18,13 @@ class Tenant(Base):
     """One record per store registered in the system."""
     __tablename__ = "tenants"
 
-    id           = Column(Integer, primary_key=True, autoincrement=True)
-    store_name   = Column(String(255), nullable=False)      # e.g. "Toko Budi"
-    owner_id     = Column(BigInteger, nullable=False)       # telegram_id of the owner
-    is_active    = Column(Boolean, default=True)
-    created_at   = Column(DateTime, default=datetime.now)
-    updated_at   = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    id             = Column(Integer, primary_key=True, autoincrement=True)
+    store_name     = Column(String(255), nullable=False)      # e.g. "Toko Budi"
+    qris_image_url = Column(String(500), nullable=True)       # Foto QRIS Statis Toko
+    owner_id       = Column(BigInteger, nullable=False)       # telegram_id of the owner
+    is_active      = Column(Boolean, default=True)
+    created_at     = Column(DateTime, default=datetime.now)
+    updated_at     = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 
 class BotUser(Base):
@@ -100,6 +101,7 @@ class Product(Base):
     # --- Consignment (Titipan) ---
     is_consignment = Column(Boolean, default=False)               # produk titipan/konsinyasi
     consignment_supplier = Column(String(255), nullable=True)     # nama supplier
+    image_url = Column(String(500), nullable=True)                # product photo or illustration URL
 
 
 class StockMovement(Base):
@@ -194,6 +196,24 @@ class StoreSchedule(Base):
     operating_hours = Column(String(50), nullable=True)  # e.g., "08:00 - 17:00"
     reason = Column(String(255), nullable=True)          # e.g., "Libur Lebaran"
     is_active = Column(Boolean, default=True)
+class QrisTransaction(Base):
+    """Catatan transaksi QRIS Sandbox via KlikQRIS."""
+    __tablename__ = "qris_transactions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    order_id = Column(String(100), unique=True, nullable=False, index=True)
+    invoice_no = Column(String(100), nullable=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=True)
+    amount = Column(Integer, nullable=False)           # Nominal pokok
+    amount_uniq = Column(Integer, default=0)          # Kode unik nominal
+    total_amount = Column(Integer, nullable=False)     # Total yang harus dibayar
+    status = Column(String(50), default="PENDING")    # PENDING, PAID, SUCCESS, EXPIRED
+    signature = Column(String(255), nullable=True)
+    qris_url = Column(String(500), nullable=True)
+    qris_image = Column(Text, nullable=True)          # Base64 string qris_image
+    expired_at = Column(String(50), nullable=True)
+    paid_at = Column(String(50), nullable=True)
+    keterangan = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 

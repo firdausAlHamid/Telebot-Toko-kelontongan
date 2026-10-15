@@ -62,13 +62,17 @@ from auth import (
     sync_user_info, is_registered, is_kasir as auth_is_kasir,
     is_owner as auth_is_owner, validate_and_activate_token, get_tenant_id, get_store_name
 )
-from menu_helpers import build_main_menu_keyboard, show_main_menu
+from menu_helpers import (
+    build_main_menu_keyboard, show_main_menu,
+    build_persistent_reply_keyboard, build_customer_menu_keyboard, get_miniapp_urls
+)
 from dev_handlers import get_dev_handlers
 import math
 import datetime
 import os
 import random
 import time
+import json
 import logging
 
 logger = logging.getLogger(__name__)
@@ -517,70 +521,63 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 await update.message.reply_text(msg)
 
-    if not is_registered(user_id):
-        # Unregistered — show onboarding instructions
-        try:
-            from config import API_BASE_URL
-            web_url = API_BASE_URL.rstrip('/') + '/website/'
-        except Exception:
-            web_url = 'https://pos.yourdomain.com/register'
+    try:
+        from config import API_BASE_URL
+        miniapp_url = f"{API_BASE_URL.rstrip('/')}/miniapp/index.html"
+    except Exception:
+        miniapp_url = "http://localhost:8001/miniapp/index.html"
 
-        await update.message.reply_text(
+    persistent_kb = build_persistent_reply_keyboard()
+
+    if not is_registered(user_id):
+        # Customer view (Unregistered as staff)
+        keyboard = build_customer_menu_keyboard()
+
+        text = (
             f"👋 Halo, *{tg_user.first_name}*!\n\n"
-            f"Selamat datang di *Bot POS Toko* 🏪\n\n"
-            f"Kamu belum terdaftar. Untuk mulai:\n\n"
-            f"*Jika kamu Pemilik Toko (Owner):*\n"
-            f"1. Buka website pendaftaran\n"
-            f"2. Daftarkan toko kamu → dapat token\n"
-            f"3. Paste token di sini\n\n"
-            f"*Jika kamu Kasir:*\n"
-            f"1. Minta token dari pemilik toko kamu\n"
-            f"2. Paste token di sini\n\n"
-            f"🔑 *Sudah punya token? Ketik token kamu sekarang.*",
+            f"Selamat datang di *Toko Kelontong* 🏪\n"
+            f"Kini Anda dapat berbelanja kebutuhan sehari-hari dengan praktis melalui **Telegram Mini App**!\n\n"
+            f"👇 *Pilih menu di bawah ini untuk membuka Mini App:*\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"🔑 _Jika Anda adalah Pemilik Toko (Owner) atau Kasir, ketik token Anda di sini untuk mengaktifkan akses staf._"
+        )
+        # Send message with persistent keyboard and popup menu
+        await update.message.reply_text(
+            text,
             parse_mode="Markdown",
-            reply_markup=ReplyKeyboardRemove()
+            reply_markup=keyboard
         )
         return
 
-    # Registered — pre-load cart and show menu
-    _refresh_cache_if_needed()
-    load_db_cart_to_memory(user_id, context)
-
+    # Registered staff
     from auth import get_store_name
     store_name = get_store_name(user_id) or "Toko Kamu"
     
+    # Send persistent reply keyboard so the bottom button appears
     await update.message.reply_text(
         f"👋 Halo, *{tg_user.first_name}*!\n"
         f"🏪 Toko: *{store_name}*\n\n"
-        f"Pilih menu di bawah ini:",
+        f"Silakan pilih menu di bawah ini untuk membuka Mini App:",
         parse_mode="Markdown",
         reply_markup=build_main_menu_keyboard(user_id=user_id)
     )
 
 
 async def handler_mulai_inline(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handler for the '🛒 Mulai Transaksi' inline button."""
+    """Handler for the '🛒 Mulai Transaksi' inline button — redirects to Mini App popup."""
     query = update.callback_query
-    user_id = update.effective_user.id
-    
     if query:
         await query.answer()
 
-    if not auth_is_kasir(user_id):
-        if query:
-            await query.edit_message_text("⛔ Kamu belum terdaftar.")
-        return
-
-    ensure_cart_loaded(user_id, context)
-    tenant_id = get_tenant_id(user_id)
-    text = build_cart_text_from_memory(
-        context, "🏪 *Katalog Produk*\n\nSilakan pilih kategori:", tenant_id)
-    reply_markup = build_categories_keyboard(tenant_id)
-    
+    urls = get_miniapp_urls()
+    text = "🛍️ *Etalase Toko Kelontong*\n\nKetuk tombol di bawah untuk membuka etalase belanja Mini App:"
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("🛍️ Buka Toko (Mini App)", web_app=WebAppInfo(url=urls["store"]))
+    ]])
     if query:
-        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=keyboard)
     else:
-        await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+        await update.message.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
 
 
 async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1231,15 +1228,15 @@ async def post_init(application):
     ]
     await application.bot.set_my_commands(commands)
     
-    # Set the bottom-left Menu button to open the Mini App Dashboard
+    # Set the bottom-left Menu button to open the Mini App Storefront
     try:
         from config import API_BASE_URL
-        dashboard_url = f"{API_BASE_URL.rstrip('/')}/miniapp/index.html"
-        if dashboard_url.startswith("https://"):
+        miniapp_url = f"{API_BASE_URL.rstrip('/')}/miniapp/index.html"
+        if miniapp_url.startswith("https://"):
             await application.bot.set_chat_menu_button(
-                menu_button=MenuButtonWebApp(text="📊 Dashboard", web_app=WebAppInfo(url=dashboard_url))
+                menu_button=MenuButtonWebApp(text="🛍️ Belanja", web_app=WebAppInfo(url=miniapp_url))
             )
-            logger.info("Menu button set to Mini App Dashboard: %s", dashboard_url)
+            logger.info("Menu button set to Mini App Storefront: %s", miniapp_url)
         else:
             logger.warning("Skipping Mini App menu button — API_BASE_URL is not HTTPS: %s", API_BASE_URL)
     except Exception as e:
@@ -1247,6 +1244,121 @@ async def post_init(application):
     
     # Pre-load product cache at startup
     _refresh_cache_if_needed(None)
+
+
+async def handle_web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler for data sent back from Telegram Mini App via sendData()."""
+    if not update.effective_message or not update.effective_message.web_app_data:
+        return
+    data_str = update.effective_message.web_app_data.data
+    logger.info("Received web_app_data: %s", data_str)
+    try:
+        data = json.loads(data_str)
+    except Exception as e:
+        logger.error("Failed to parse web_app_data: %s", e)
+        return
+
+    invoice_no = data.get("invoice_no")
+    grand_total = data.get("grand_total", 0)
+    items = data.get("items", [])
+    delivery_label = "🏪 Ambil Mandiri di Toko (Pickup)"
+    payment_method = data.get("payment_method", "cod").upper()
+
+    user_id = update.effective_user.id
+    store_name = get_store_name(user_id) or "Toko Kelontong"
+
+    lines = []
+    for it in items:
+        lines.append(f"▪️ {it.get('name', 'Barang')} x{it.get('quantity', 1)} — Rp{it.get('price', 0) * it.get('quantity', 1):,}")
+    items_summary = "\n".join(lines) if lines else "- (Data pesanan terlampir)"
+
+    try:
+        from config import API_BASE_URL
+        miniapp_url = f"{API_BASE_URL.rstrip('/')}/miniapp/index.html"
+    except Exception:
+        miniapp_url = "http://localhost:8001/miniapp/index.html"
+
+    msg = (
+        f"🎉 *PESANAN DITERIMA VIA MINI APP!*\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"🧾 Invoice: *{invoice_no or 'Diproses'}*\n"
+        f"🏪 Toko: *{store_name}*\n"
+        f"📦 Pengiriman: *{delivery_label}*\n"
+        f"💳 Pembayaran: *{payment_method}*\n\n"
+        f"📋 *Rincian Pesanan:*\n{items_summary}\n\n"
+        f"💰 *Total Bayar: Rp{grand_total:,}*\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"Pesanan Anda sedang dipersiapkan oleh toko kami. Terima kasih telah berbelanja! 🛍️"
+    )
+
+    keyboard = [
+        [InlineKeyboardButton("🛍️ Belanja Lagi (Mini App)", web_app=WebAppInfo(url=miniapp_url))],
+    ]
+    await update.effective_message.reply_text(
+        msg,
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
+async def cmd_store_miniapp(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Command handler for /katalog, /toko, /belanja — pops up Storefront Mini App."""
+    urls = get_miniapp_urls()
+    await update.message.reply_text(
+        "🛍️ *Etalase Toko Kelontong*\n\nKetuk tombol di bawah untuk membuka etalase belanja:",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("🛍️ Buka Toko (Katalog Belanja)", web_app=WebAppInfo(url=urls["store"]))
+        ]])
+    )
+
+
+async def cmd_stock_miniapp(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Command handler for /stock, /stok, /produk — pops up Stock Mini App."""
+    urls = get_miniapp_urls()
+    await update.message.reply_text(
+        "📦 *Katalog & Stok Barang*\n\nKetuk tombol di bawah untuk melihat rincian stok:",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("📦 Buka Stok & Produk", web_app=WebAppInfo(url=urls["stok"]))
+        ]])
+    )
+
+
+async def cmd_report_miniapp(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Command handler for /laporan — pops up Report Mini App."""
+    urls = get_miniapp_urls()
+    await update.message.reply_text(
+        "📊 *Laporan Penjualan Toko*\n\nKetuk tombol di bawah untuk membuka laporan:",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("📊 Buka Laporan Penjualan", web_app=WebAppInfo(url=urls["laporan"]))
+        ]])
+    )
+
+
+async def cmd_riwayat_miniapp(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Command handler for /riwayat — pops up Transactions Mini App."""
+    urls = get_miniapp_urls()
+    await update.message.reply_text(
+        "🧾 *Riwayat Transaksi*\n\nKetuk tombol di bawah untuk melihat riwayat:",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("🧾 Buka Riwayat Transaksi", web_app=WebAppInfo(url=urls["transaksi"]))
+        ]])
+    )
+
+
+async def cmd_panel_miniapp(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Command handler for /panel — pops up Owner Panel Mini App."""
+    urls = get_miniapp_urls()
+    await update.message.reply_text(
+        "⚙️ *Panel Owner & Manajemen Toko*\n\nKetuk tombol di bawah untuk membuka panel:",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("⚙️ Buka Panel Owner & Kasir", web_app=WebAppInfo(url=urls["kasir"]))
+        ]])
+    )
 
 
 # --- Main Entry Point ---
@@ -1263,6 +1375,13 @@ if __name__ == "__main__":
         .build()
     )
 
+    # Mini App Command Direct Routes (Pop up web app directly)
+    app.add_handler(CommandHandler(["toko", "katalog", "belanja"], cmd_store_miniapp))
+    app.add_handler(CommandHandler(["stock", "stok", "produk"],   cmd_stock_miniapp))
+    app.add_handler(CommandHandler(["laporan"],                   cmd_report_miniapp))
+    app.add_handler(CommandHandler(["riwayat"],                   cmd_riwayat_miniapp))
+    app.add_handler(CommandHandler(["panel"],                     cmd_panel_miniapp))
+
     # Order matters: more specific first
     for h in get_dev_handlers():                   # /devrole (testing, dev only)
         app.add_handler(h)
@@ -1276,7 +1395,6 @@ if __name__ == "__main__":
 
     app.add_handler(CommandHandler("start",    start))
     app.add_handler(CommandHandler("help",     handler_help))
-    app.add_handler(CommandHandler("riwayat",  riwayat_command))
 
     # Main menu inline routes (bridges to the commands)
     app.add_handler(CallbackQueryHandler(handler_mulai_inline, pattern="^main_transaksi$"))
@@ -1292,6 +1410,9 @@ if __name__ == "__main__":
 
     # Voice note handler — AI-powered CRUD via voice commands (owner only)
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
+
+    # Telegram Mini App web_app_data handler (sendData)
+    app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_web_app_data))
 
     # Text catch-all: handles token activation + voice correction + fallback
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))

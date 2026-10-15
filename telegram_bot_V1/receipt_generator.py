@@ -145,10 +145,6 @@ def generate_receipt_image(
         draw.text((WIDTH - 20 - get_text_width(total_str, font_bold), y), total_str, font=font_bold, fill='black')
         y += 40
     
-    # Payment Method
-    draw.text((20, y), f"Pembayaran: {payment_method}", font=font, fill='black')
-    y += 40
-    
     # Draw Recommendations
     if recommendations:
         draw.text((20, y), "=" * 32, font=font, fill='black')

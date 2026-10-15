@@ -26,7 +26,7 @@ Get-CimInstance Win32_Process -Filter "Name like 'python%'" |
 Start-Sleep -Seconds 1
 
 # 3. API server (FastAPI) — serve /miniapp & /website
-Start-Process -FilePath $PY -ArgumentList "-m uvicorn api_server:app --host 0.0.0.0 --port $PORT" `
+Start-Process -FilePath $PY -ArgumentList "-m uvicorn api_server:app --host 0.0.0.0 --port $PORT --reload" `
     -WorkingDirectory $PSScriptRoot -WindowStyle Minimized
 Write-Host "[2] API server jalan di http://localhost:$PORT" -ForegroundColor Green
 

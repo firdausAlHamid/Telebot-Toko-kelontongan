@@ -1,42 +1,80 @@
-from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update
+from telegram import (
+    InlineKeyboardMarkup, InlineKeyboardButton, Update, WebAppInfo,
+    ReplyKeyboardMarkup, KeyboardButton
+)
 from telegram.ext import ContextTypes, ConversationHandler
 from auth import is_registered, get_store_name, can
 
+try:
+    from config import API_BASE_URL
+except ImportError:
+    API_BASE_URL = "http://localhost:8001"
+
+
+def get_miniapp_urls():
+    base = API_BASE_URL.rstrip('/')
+    return {
+        "store": f"{base}/miniapp/index.html",
+        "dashboard": f"{base}/miniapp/dashboard.html",
+        "stok": f"{base}/miniapp/dashboard.html?tab=stok",
+        "laporan": f"{base}/miniapp/dashboard.html?tab=ringkasan",
+        "transaksi": f"{base}/miniapp/dashboard.html?tab=transaksi",
+        "kasir": f"{base}/miniapp/dashboard.html?tab=kasir",
+    }
+
+
+def build_persistent_reply_keyboard():
+    """Build persistent keyboard with web_app button at bottom of chat."""
+    urls = get_miniapp_urls()
+    return ReplyKeyboardMarkup(
+        [[KeyboardButton("🛍️ Buka Toko", web_app=WebAppInfo(url=urls["store"]))]],
+        resize_keyboard=True,
+        is_persistent=True
+    )
+
+
+def build_customer_menu_keyboard():
+    """Build inline keyboard for customers — each button opens a Mini App popup."""
+    urls = get_miniapp_urls()
+    kb = [
+        [InlineKeyboardButton("🛍️ Buka Toko (Katalog Belanja)", web_app=WebAppInfo(url=urls["store"]))],
+        [
+            InlineKeyboardButton("📦 Cek Stok Barang", web_app=WebAppInfo(url=urls["stok"])),
+            InlineKeyboardButton("🧾 Riwayat Transaksi", web_app=WebAppInfo(url=urls["transaksi"]))
+        ],
+        [InlineKeyboardButton("🏪 Informasi Toko", web_app=WebAppInfo(url=urls["store"]))]
+    ]
+    return InlineKeyboardMarkup(kb)
+
+
 def build_main_menu_keyboard(user_id: int):
-    """Build the main menu inline keyboard based on RBAC permissions."""
+    """Build main menu inline keyboard — ALL options open Mini App popups (no chat spam)."""
+    urls = get_miniapp_urls()
     kb = []
     
-    if can(user_id, "trx:create"):
-        kb.append([InlineKeyboardButton("🛒 Mulai Transaksi", callback_data="main_transaksi")])
-        
+    # Storefront Mini App (Buka Toko)
+    kb.append([InlineKeyboardButton("🛍️ Buka Toko (Katalog Belanja)", web_app=WebAppInfo(url=urls["store"]))])
+    
     row2 = []
-    if can(user_id, "stock:view"):
-        row2.append(InlineKeyboardButton("📦 Stok Barang", callback_data="stk_menu"))
+    if can(user_id, "stock:view") or can(user_id, "product:view"):
+        row2.append(InlineKeyboardButton("📦 Stok & Produk", web_app=WebAppInfo(url=urls["stok"])))
     if can(user_id, "report:view_shift") or can(user_id, "report:view_tenant"):
-        row2.append(InlineKeyboardButton("📊 Laporan", callback_data="main_laporan"))
+        row2.append(InlineKeyboardButton("📊 Laporan Penjualan", web_app=WebAppInfo(url=urls["laporan"])))
     if row2:
         kb.append(row2)
         
     row3 = []
-    if can(user_id, "promo:view") or can(user_id, "promo:manage"):
-        row3.append(InlineKeyboardButton("🏷️ Promo", callback_data="main_promo"))
-    if can(user_id, "schedule:view") or can(user_id, "schedule:manage"):
-        row3.append(InlineKeyboardButton("🗓️ Jadwal", callback_data="main_jadwal"))
+    if can(user_id, "history:view_self") or can(user_id, "history:view_tenant"):
+        row3.append(InlineKeyboardButton("🧾 Riwayat Transaksi", web_app=WebAppInfo(url=urls["transaksi"])))
+    if can(user_id, "panel:manage") or can(user_id, "consign:manage"):
+        row3.append(InlineKeyboardButton("⚙️ Panel Owner & Kasir", web_app=WebAppInfo(url=urls["kasir"])))
+    elif can(user_id, "promo:view") or can(user_id, "schedule:view"):
+        row3.append(InlineKeyboardButton("🏷️ Promo & Jadwal", web_app=WebAppInfo(url=urls["dashboard"])))
     if row3:
         kb.append(row3)
         
-    row4 = []
-    if can(user_id, "product:manage"):
-        row4.append(InlineKeyboardButton("📦 Produk", callback_data="prod_menu"))
-    elif can(user_id, "product:view"):
-        row4.append(InlineKeyboardButton("🛒 Katalog Produk", callback_data="customer_katalog"))
-        
-    if can(user_id, "panel:manage"):
-        row4.append(InlineKeyboardButton("⚙️ Panel Owner", callback_data="main_panel"))
-    if row4:
-        kb.append(row4)
-        
     return InlineKeyboardMarkup(kb)
+
 
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show the main menu (used as a callback handler and by ConversationHandlers)."""
@@ -47,22 +85,17 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query:
         await query.answer()
 
-    if not is_registered(user_id):
-        text = "⛔ Kamu belum terdaftar."
-        if query:
-            await query.edit_message_text(text)
-        else:
-            await update.message.reply_text(text)
-        return ConversationHandler.END
-
-    store_name = get_store_name(user_id) or "Toko Kamu"
+    store_name = get_store_name(user_id) or "Toko Kelontong"
     text = (
         f"👋 Halo, *{tg_user.first_name}*!\n"
         f"🏪 Toko: *{store_name}*\n\n"
-        f"Pilih menu di bawah ini:"
+        f"Silakan pilih menu di bawah ini untuk membuka Mini App:"
     )
 
-    reply_markup = build_main_menu_keyboard(user_id=user_id)
+    if not is_registered(user_id):
+        reply_markup = build_customer_menu_keyboard()
+    else:
+        reply_markup = build_main_menu_keyboard(user_id=user_id)
 
     if query:
         await query.edit_message_text(text, parse_mode="Markdown", reply_markup=reply_markup)
