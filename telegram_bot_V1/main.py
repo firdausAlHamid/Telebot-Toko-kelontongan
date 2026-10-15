@@ -527,7 +527,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         miniapp_url = "http://localhost:8001/miniapp/index.html"
 
-    persistent_kb = build_persistent_reply_keyboard()
+    persistent_kb = build_persistent_reply_keyboard(user_id=user_id)
 
     if not is_registered(user_id):
         # Customer view (Unregistered as staff)
@@ -537,7 +537,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"👋 Halo, *{tg_user.first_name}*!\n\n"
             f"Selamat datang di *Toko Kelontong* 🏪\n"
             f"Kini Anda dapat berbelanja kebutuhan sehari-hari dengan praktis melalui **Telegram Mini App**!\n\n"
-            f"👇 *Pilih menu di bawah ini untuk membuka Mini App:*\n\n"
+            f"👇 *Pilih menu di bawah ini untuk membuka Mini App:*\n"
+            f"• 🛍️ *Buka Toko*: Etalase katalog belanja\n"
+            f"• 📷 *Tambah via Foto*: Input cepat produk dari foto catatan (AI OCR)\n"
+            f"• 📊 *Spreadsheet Excel*: Kelola stok massal via Excel / CSV\n\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"🔑 _Jika Anda adalah Pemilik Toko (Owner) atau Kasir, ketik token Anda di sini untuk mengaktifkan akses staf._"
         )
@@ -557,7 +560,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"👋 Halo, *{tg_user.first_name}*!\n"
         f"🏪 Toko: *{store_name}*\n\n"
-        f"Silakan pilih menu di bawah ini untuk membuka Mini App:",
+        f"Silakan pilih menu Mini App di bawah ini:\n"
+        f"• 🛍️ *Buka Toko*: Etalase belanja mandiri pelanggan\n"
+        f"• 📷 *Tambah via Foto*: Input produk instan dari catatan kertas (AI OCR)\n"
+        f"• 📊 *Spreadsheet Excel*: Unduh template & upload stok massal\n"
+        f"• 📦 *Stok & Produk*: Manajemen barang & harga",
         parse_mode="Markdown",
         reply_markup=build_main_menu_keyboard(user_id=user_id)
     )
@@ -1231,7 +1238,7 @@ async def post_init(application):
     # Set the bottom-left Menu button to open the Mini App Storefront
     try:
         from config import API_BASE_URL
-        miniapp_url = f"{API_BASE_URL.rstrip('/')}/miniapp/index.html"
+        miniapp_url = f"{API_BASE_URL.rstrip('/')}/miniapp/index.html?v={int(time.time())}"
         if miniapp_url.startswith("https://"):
             await application.bot.set_chat_menu_button(
                 menu_button=MenuButtonWebApp(text="🛍️ Belanja", web_app=WebAppInfo(url=miniapp_url))
@@ -1317,10 +1324,38 @@ async def cmd_stock_miniapp(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Command handler for /stock, /stok, /produk — pops up Stock Mini App."""
     urls = get_miniapp_urls()
     await update.message.reply_text(
-        "📦 *Katalog & Stok Barang*\n\nKetuk tombol di bawah untuk melihat rincian stok:",
+        "📦 *Katalog & Stok Barang*\n\nKetuk tombol di bawah untuk kelola stok produk:\n• 📦 *Buka Stok*: Lihat & edit stok saat ini\n• 📷 *Tambah via Foto*: Input produk dari foto catatan kertas\n• 📊 *Spreadsheet*: Unduh/upload stok via Excel",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("📦 Buka Stok & Produk", web_app=WebAppInfo(url=urls["stok"]))],
+            [
+                InlineKeyboardButton("📷 Tambah via Foto", web_app=WebAppInfo(url=urls["stok_foto"])),
+                InlineKeyboardButton("📊 Spreadsheet Excel", web_app=WebAppInfo(url=urls["stok_excel"]))
+            ]
+        ])
+    )
+
+
+async def cmd_photo_miniapp(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Command handler for /foto, /scan, /ocr — pops up OCR Photo modal."""
+    urls = get_miniapp_urls()
+    await update.message.reply_text(
+        "📷 *Tambah Produk via Foto Catatan (AI OCR)*\n\nFoto catatan kertas harga/produk Anda, sistem akan mengekstrak nama, harga, stok, dan kategori secara otomatis:",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("📦 Buka Stok & Produk", web_app=WebAppInfo(url=urls["stok"]))
+            InlineKeyboardButton("📷 Buka Kamera / Upload Catatan", web_app=WebAppInfo(url=urls["stok_foto"]))
+        ]])
+    )
+
+
+async def cmd_excel_miniapp(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Command handler for /excel, /spreadsheet, /sheet — pops up Spreadsheet modal."""
+    urls = get_miniapp_urls()
+    await update.message.reply_text(
+        "📊 *Kelola Stok via Spreadsheet Excel*\n\nUnduh template kosong, ekspor stok terkini, atau unggah file `.xlsx` / `.csv` Anda:",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("📊 Buka Menu Spreadsheet Excel", web_app=WebAppInfo(url=urls["stok_excel"]))
         ]])
     )
 
@@ -1378,6 +1413,8 @@ if __name__ == "__main__":
     # Mini App Command Direct Routes (Pop up web app directly)
     app.add_handler(CommandHandler(["toko", "katalog", "belanja"], cmd_store_miniapp))
     app.add_handler(CommandHandler(["stock", "stok", "produk"],   cmd_stock_miniapp))
+    app.add_handler(CommandHandler(["foto", "scan", "ocr"],       cmd_photo_miniapp))
+    app.add_handler(CommandHandler(["excel", "spreadsheet", "sheet"], cmd_excel_miniapp))
     app.add_handler(CommandHandler(["laporan"],                   cmd_report_miniapp))
     app.add_handler(CommandHandler(["riwayat"],                   cmd_riwayat_miniapp))
     app.add_handler(CommandHandler(["panel"],                     cmd_panel_miniapp))

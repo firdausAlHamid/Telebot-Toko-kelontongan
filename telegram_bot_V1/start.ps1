@@ -30,21 +30,23 @@ Start-Process -FilePath $PY -ArgumentList "-m uvicorn api_server:app --host 0.0.
     -WorkingDirectory $PSScriptRoot -WindowStyle Minimized
 Write-Host "[2] API server jalan di http://localhost:$PORT" -ForegroundColor Green
 
-# 4. ngrok
-Start-Process -FilePath "ngrok" -ArgumentList "http $PORT" -WindowStyle Minimized
+# 4. ngrok (domain tetap -> URL nggak berubah tiap restart)
+$DOMAIN = "finally-matching-upstage.ngrok-free.dev"
+Start-Process -FilePath "ngrok" -ArgumentList "http --url=$DOMAIN $PORT" -WindowStyle Minimized
 Write-Host "[3] Nunggu ngrok..." -ForegroundColor Yellow
-$url = $null
-for ($i = 0; $i -lt 20 -and -not $url; $i++) {
+$ok = $false
+for ($i = 0; $i -lt 20 -and -not $ok; $i++) {
     Start-Sleep -Seconds 1
     try {
         $t = Invoke-RestMethod "http://127.0.0.1:4040/api/tunnels" -TimeoutSec 2
-        $url = ($t.tunnels | Where-Object { $_.public_url -like "https://*" } | Select-Object -First 1).public_url
+        $ok = [bool]($t.tunnels | Where-Object { $_.public_url -like "https://$DOMAIN*" })
     } catch {}
 }
-if (-not $url) {
-    Write-Host "[!] ngrok gagal dapet URL. Cek: ngrok config add-authtoken <token>" -ForegroundColor Red
+if (-not $ok) {
+    Write-Host "[!] ngrok gagal pakai domain $DOMAIN. Cek authtoken akun yang punya domain: ngrok config add-authtoken <token>" -ForegroundColor Red
     exit 1
 }
+$url = "https://$DOMAIN"
 Write-Host "[3] ngrok URL: $url" -ForegroundColor Green
 
 # 5. Tulis .env (dibaca config.py)

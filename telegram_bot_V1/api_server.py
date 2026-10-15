@@ -62,7 +62,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from fastapi.responses import RedirectResponse
+@app.middleware("http")
+async def disable_cache_for_miniapp(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/miniapp") or request.url.path.startswith("/api"):
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        response.headers["ngrok-skip-browser-warning"] = "true"
+    return response
+
+from fastapi.responses import RedirectResponse, StreamingResponse
 
 @app.get("/")
 async def root_redirect():
@@ -1673,6 +1683,313 @@ async def mini_upload_image(
         "message": "Gambar berhasil diunggah!",
         "image_url": image_rel_url,
         "product": updated_prod
+    }
+
+
+# ==============================================================================
+# STOCK MANAGEMENT: OCR FOTO CATATAN & SPREADSHEET (EXCEL/CSV)
+# ==============================================================================
+import base64
+import io
+import pandas as pd
+from openai import AsyncOpenAI
+from config import OPENROUTER_API_KEY, OPENROUTER_CHAT_MODEL
+
+class BatchProductItem(BaseModel):
+    name: str
+    category: str | None = "Sembako"
+    price: int = 0
+    stock: int = 100
+
+class BatchProductRequest(BaseModel):
+    tenant_id: int | None = 1
+    items: list[BatchProductItem]
+
+
+@app.post("/api/mini/stock/ocr-photo")
+async def mini_stock_ocr_photo(file: UploadFile = File(...)):
+    """Membaca catatan stok / bon / tulisan tangan di kertas menggunakan AI Vision."""
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="File harus berupa gambar (JPG, PNG, dll).")
+    
+    contents = await file.read()
+    b64_img = base64.b64encode(contents).decode("utf-8")
+    media_type = file.content_type or "image/jpeg"
+    
+    prompt = """
+Kamu adalah asisten kasir toko kelontong Indonesia yang sangat teliti.
+Tolong baca dan analisa catatan kertas / tulisan tangan / faktur / bon barang masuk ini.
+Ekstrak setiap item barang yang ada ke dalam format JSON array murni.
+
+Untuk setiap produk yang ditemukan, berikan field:
+- name: nama produk yang jelas dan rapi (misal: "Beras Rojolele 5kg", "Telur Ayam Negeri 1kg", "Indomie Goreng", "Sabun Lifebuoy")
+- category: pilih salah satu kategori yang paling cocok dari: "Sembako", "Makanan", "Minuman", "Kebersihan", "Obat & Mandi", atau "Lainnya"
+- price: harga jual dalam angka integer bulat (jika tidak tertera atau tidak jelas di kertas, berikan 0 atau perkiraan wajar)
+- stock: jumlah stok/kuantitas dalam angka integer (default 10 jika tidak tertera)
+
+Jawab HANYA dalam format JSON array valid, contoh:
+[
+  {"name": "Beras Rojolele 5kg", "category": "Sembako", "price": 75000, "stock": 10},
+  {"name": "Minyak Goreng 2L", "category": "Sembako", "price": 35000, "stock": 5}
+]
+Jangan tambahkan teks pembuka atau markdown lain, hanya JSON array.
+"""
+    try:
+        client = AsyncOpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=OPENROUTER_API_KEY
+        )
+        res = await client.chat.completions.create(
+            model=OPENROUTER_CHAT_MODEL,
+            max_tokens=2500,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{b64_img}"}}
+                ]
+            }]
+        )
+        raw_text = res.choices[0].message.content.strip()
+        if raw_text.startswith("```json"):
+            raw_text = raw_text[7:]
+        if raw_text.startswith("```"):
+            raw_text = raw_text[3:]
+        if raw_text.endswith("```"):
+            raw_text = raw_text[:-3]
+        raw_text = raw_text.strip()
+        
+        parsed = json.loads(raw_text)
+        if not isinstance(parsed, list):
+            parsed = [parsed]
+        return {
+            "success": True,
+            "items": parsed,
+            "count": len(parsed)
+        }
+    except Exception as e:
+        logger.error(f"Error OCR photo: {e}")
+        raise HTTPException(status_code=500, detail=f"Gagal memproses gambar catatan: {str(e)}")
+
+
+@app.post("/api/mini/stock/save-batch")
+async def mini_stock_save_batch(req: BatchProductRequest):
+    """Menyimpan banyak produk sekaligus ke database hasil OCR atau input massal."""
+    db = SessionLocal()
+    tid = req.tenant_id or 1
+    added_count = 0
+    updated_count = 0
+    
+    for it in req.items:
+        clean_name = it.name.strip()
+        if not clean_name:
+            continue
+        existing = db.query(Product).filter(
+            Product.tenant_id == tid,
+            Product.item_name.ilike(clean_name)
+        ).first()
+        if existing:
+            if it.price > 0:
+                existing.price = it.price
+            existing.stock = (existing.stock or 0) + it.stock
+            if it.category:
+                existing.category = it.category
+            updated_count += 1
+        else:
+            new_p = Product(
+                item_name=clean_name,
+                category=it.category or "Sembako",
+                price=it.price,
+                stock=it.stock,
+                tenant_id=tid,
+                is_consignment=False
+            )
+            db.add(new_p)
+            added_count += 1
+    
+    db.commit()
+    db.close()
+    return {
+        "success": True,
+        "message": f"Berhasil menyimpan {added_count} produk baru dan memperbarui {updated_count} produk!",
+        "added": added_count,
+        "updated": updated_count
+    }
+
+
+@app.get("/api/mini/stock/export-excel")
+async def mini_stock_export_excel(tenant_id: int | None = 1):
+    """Ekspor seluruh stok produk ke spreadsheet Excel (.xlsx) / template."""
+    db = SessionLocal()
+    tid = tenant_id or 1
+    products = db.query(Product).filter(
+        (Product.tenant_id == tid) | (Product.tenant_id == None)
+    ).order_by(Product.category, Product.item_name).all()
+    
+    data = []
+    if products:
+        for p in products:
+            data.append({
+                "Nama Produk": p.item_name,
+                "Kategori": p.category or "Umum",
+                "Harga Jual": p.price or 0,
+                "Stok": p.stock or 0
+            })
+    else:
+        data = [
+            {"Nama Produk": "Beras Rojolele 5kg", "Kategori": "Sembako", "Harga Jual": 75000, "Stok": 20},
+            {"Nama Produk": "Minyak Goreng 2L", "Kategori": "Sembako", "Harga Jual": 36000, "Stok": 50},
+            {"Nama Produk": "Indomie Goreng", "Kategori": "Makanan", "Harga Jual": 3500, "Stok": 100},
+            {"Nama Produk": "Sabun Lifebuoy", "Kategori": "Kebersihan", "Harga Jual": 4500, "Stok": 40}
+        ]
+    db.close()
+    
+    df = pd.DataFrame(data)
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name="Daftar Stok")
+    buf.seek(0)
+    
+    filename = f"stok_toko_ciamis.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-cache"
+        }
+    )
+
+
+def _infer_smart_category(name: str) -> str:
+    lower = name.lower()
+    if any(k in lower for k in ["beras", "telur", "gula", "tepung", "minyak", "terigu", "filma", "bimoli", "sembako"]):
+        return "Sembako"
+    if any(k in lower for k in ["mie", "indomie", "sedaap", "snack", "chitato", "biskuit", "roti", "makanan", "wafer", "permen"]):
+        return "Makanan"
+    if any(k in lower for k in ["kopi", "teh", "aqua", "minerale", "susu", "ultra", "pucuk", "jus", "minuman", "sirup"]):
+        return "Minuman"
+    if any(k in lower for k in ["sabun", "rinso", "soklin", "daia", "downy", "wipol", "baygon", "sunlight", "mama lemon", "pembersih", "kebersihan"]):
+        return "Kebersihan"
+    if any(k in lower for k in ["bodrex", "tolak angin", "obat", "paracetamol", "kayu putih", "pepsodent", "shampoo", "clear", "lifebuoy"]):
+        return "Obat & Mandi"
+    return "Lainnya"
+
+
+@app.post("/api/mini/stock/import-excel")
+async def mini_stock_import_excel(
+    file: UploadFile = File(...),
+    mode: str = Form("update"),  # "update" or "replace"
+    tenant_id: int = Form(1)
+):
+    """Import spreadsheet (.xlsx / .csv) dengan opsi Update / Tambah atau Timpa Keseluruhan."""
+    contents = await file.read()
+    filename = file.filename or ""
+    
+    try:
+        if filename.endswith(".csv"):
+            df = pd.read_csv(io.BytesIO(contents))
+        else:
+            df = pd.read_excel(io.BytesIO(contents))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Gagal membaca file spreadsheet: {str(e)}")
+    
+    col_map = {}
+    for col in df.columns:
+        c_low = str(col).strip().lower()
+        if any(k in c_low for k in ["nama", "item", "produk", "product"]):
+            col_map["name"] = col
+        elif any(k in c_low for k in ["kategori", "category"]):
+            col_map["category"] = col
+        elif any(k in c_low for k in ["harga", "price", "jual"]):
+            col_map["price"] = col
+        elif any(k in c_low for k in ["stok", "stock", "qty", "jumlah"]):
+            col_map["stock"] = col
+            
+    if "name" not in col_map:
+        raise HTTPException(status_code=400, detail="Kolom 'Nama Produk' tidak ditemukan dalam spreadsheet.")
+    
+    db = SessionLocal()
+    tid = tenant_id or 1
+    
+    if mode == "replace":
+        db.query(Product).filter(Product.tenant_id == tid).delete()
+        db.commit()
+        
+    added = 0
+    updated = 0
+    
+    for _, row in df.iterrows():
+        raw_name = str(row[col_map["name"]]).strip()
+        if not raw_name or raw_name.lower() in ["nan", "none", "null"]:
+            continue
+            
+        cat = None
+        if "category" in col_map and pd.notna(row[col_map["category"]]):
+            cat = str(row[col_map["category"]]).strip()
+        if not cat or cat.lower() in ["nan", "none", "null", ""]:
+            cat = _infer_smart_category(raw_name)
+            
+        price = 0
+        if "price" in col_map and pd.notna(row[col_map["price"]]):
+            try:
+                price = int(float(row[col_map["price"]]))
+            except Exception:
+                price = 0
+                
+        stock = 100
+        if "stock" in col_map and pd.notna(row[col_map["stock"]]):
+            try:
+                stock = int(float(row[col_map["stock"]]))
+            except Exception:
+                stock = 100
+                
+        if mode == "replace":
+            new_p = Product(
+                item_name=raw_name,
+                category=cat,
+                price=price,
+                stock=stock,
+                tenant_id=tid,
+                is_consignment=False
+            )
+            db.add(new_p)
+            added += 1
+        else:
+            existing = db.query(Product).filter(
+                Product.tenant_id == tid,
+                Product.item_name.ilike(raw_name)
+            ).first()
+            if existing:
+                if price > 0:
+                    existing.price = price
+                existing.stock = stock
+                if cat:
+                    existing.category = cat
+                updated += 1
+            else:
+                new_p = Product(
+                    item_name=raw_name,
+                    category=cat,
+                    price=price,
+                    stock=stock,
+                    tenant_id=tid,
+                    is_consignment=False
+                )
+                db.add(new_p)
+                added += 1
+                
+    db.commit()
+    db.close()
+    
+    mode_text = "Timpa Keseluruhan" if mode == "replace" else "Update / Tambah"
+    return {
+        "success": True,
+        "mode": mode,
+        "message": f"Import Excel berhasil [{mode_text}]! Ditambahkan: {added}, Diperbarui: {updated}",
+        "added": added,
+        "updated": updated,
+        "total_processed": len(df)
     }
 
 

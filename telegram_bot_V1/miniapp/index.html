@@ -1063,13 +1063,31 @@
       return 'Rp ' + Number(num || 0).toLocaleString('id-ID');
     }
 
-    document.addEventListener('DOMContentLoaded', async () => {
-      // 1. Cek peran pengguna: jika kasir atau owner, langsung otomatis arahkan ke mode kasir (dashboard.html)
-      // KECUALI jika mereka sengaja ingin masuk ke mode pembeli (?view=customer atau ?mode=customer)
-      const urlParams = new URLSearchParams(window.location.search);
-      const isCustomerModeRequested = urlParams.get('view') === 'customer' || urlParams.get('mode') === 'customer';
+    // Global fetch interceptor: automatically add ngrok bypass header to ALL fetch requests
+    const _origFetch = window.fetch;
+    window.fetch = function(input, init = {}) {
+      init = init || {};
+      init.headers = init.headers || {};
+      if (init.headers instanceof Headers) {
+        if (!init.headers.has('ngrok-skip-browser-warning')) {
+          init.headers.set('ngrok-skip-browser-warning', 'true');
+        }
+      } else {
+        init.headers['ngrok-skip-browser-warning'] = 'true';
+      }
+      return _origFetch.call(this, input, init);
+    };
 
+    document.addEventListener('DOMContentLoaded', async () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const paramTenantId = urlParams.get('tenant_id') || urlParams.get('toko');
+      if (paramTenantId) {
+        activeTenantId = parseInt(paramTenantId) || 1;
+      }
+
+      // Check role: if staff (kasir / owner), auto-redirect to dashboard POS unless explicitly in customer mode
       try {
+        const isCustomerModeRequested = urlParams.get('mode') === 'customer' || urlParams.get('view') === 'customer';
         const roleRes = await fetch(`${API_BASE}/api/mini/user-role`, {
           headers: {
             'Content-Type': 'application/json',
@@ -1078,14 +1096,16 @@
         });
         if (roleRes.ok) {
           const roleData = await roleRes.json();
-          if ((roleData.role === 'kasir' || roleData.role === 'owner')) {
+          if (roleData.tenant_id && !paramTenantId) {
+            activeTenantId = roleData.tenant_id;
+          }
+          if (roleData.role === 'kasir' || roleData.role === 'owner') {
             if (!isCustomerModeRequested) {
               window.location.replace('dashboard.html');
               return;
-            } else {
-              const returnBtn = document.getElementById('btn-return-pos');
-              if (returnBtn) returnBtn.style.display = 'inline-block';
             }
+            const returnBtn = document.getElementById('btn-return-pos');
+            if (returnBtn) returnBtn.style.display = 'inline-block';
           }
         }
       } catch (e) {
@@ -1106,7 +1126,9 @@
 
     async function fetchStoreDetails() {
       try {
-        const res = await fetch(`${API_BASE}/api/mini/store-info?tenant_id=${activeTenantId}`);
+        const res = await fetch(`${API_BASE}/api/mini/store-info?tenant_id=${activeTenantId}`, {
+          headers: { 'ngrok-skip-browser-warning': 'true' }
+        });
         if (res.ok) {
           const data = await res.json();
           if (data.store_name) document.getElementById('store-title-display').textContent = data.store_name;
@@ -1149,8 +1171,10 @@
 
     async function fetchCatalog() {
       try {
-        const res = await fetch(`${API_BASE}/api/mini/catalog?tenant_id=${activeTenantId}`);
-        if (!res.ok) throw new Error('Failed to load catalog');
+        const res = await fetch(`${API_BASE}/api/mini/catalog?tenant_id=${activeTenantId}`, {
+          headers: { 'ngrok-skip-browser-warning': 'true' }
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
         const data = await res.json();
         allProducts = data.products || [];
         renderProducts();
@@ -1158,7 +1182,8 @@
         console.error('Error catalog:', err);
         document.getElementById('product-grid-el').innerHTML = `
           <div class="loader-container">
-            <p style="color:#f87171;">Gagal memuat katalog produk.</p>
+            <p style="color:#f87171; font-weight:700;">Gagal memuat katalog produk.</p>
+            <p style="color:var(--text-dim); font-size:11px; margin-top:4px;">${err.message || err}</p>
             <button class="btn-card-add" style="width:140px; margin:12px auto;" onclick="fetchCatalog()">Coba Lagi</button>
           </div>
         `;

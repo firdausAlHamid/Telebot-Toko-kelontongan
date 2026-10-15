@@ -3,7 +3,7 @@ from telegram import (
     ReplyKeyboardMarkup, KeyboardButton
 )
 from telegram.ext import ContextTypes, ConversationHandler
-from auth import is_registered, get_store_name, can
+from auth import is_registered, get_store_name, can, is_kasir, is_owner
 
 try:
     from config import API_BASE_URL
@@ -12,20 +12,34 @@ except ImportError:
 
 
 def get_miniapp_urls():
-    base = API_BASE_URL.rstrip('/')
+    try:
+        import config
+        base = config.API_BASE_URL.rstrip('/')
+    except Exception:
+        base = "http://localhost:8001"
     return {
         "store": f"{base}/miniapp/index.html",
+        "store_customer": f"{base}/miniapp/index.html?mode=customer",
         "dashboard": f"{base}/miniapp/dashboard.html",
         "stok": f"{base}/miniapp/dashboard.html?tab=stok",
+        "stok_foto": f"{base}/miniapp/dashboard.html?tab=stok&action=ocr",
+        "stok_excel": f"{base}/miniapp/dashboard.html?tab=stok&action=excel",
         "laporan": f"{base}/miniapp/dashboard.html?tab=ringkasan",
         "transaksi": f"{base}/miniapp/dashboard.html?tab=transaksi",
         "kasir": f"{base}/miniapp/dashboard.html?tab=kasir",
+        "pos": f"{base}/miniapp/dashboard.html",
     }
 
 
-def build_persistent_reply_keyboard():
+def build_persistent_reply_keyboard(user_id: int | None = None):
     """Build persistent keyboard with web_app button at bottom of chat."""
     urls = get_miniapp_urls()
+    if user_id and (is_kasir(user_id) or is_owner(user_id)):
+        return ReplyKeyboardMarkup(
+            [[KeyboardButton("💻 Buka Kasir (POS)", web_app=WebAppInfo(url=urls["dashboard"]))]],
+            resize_keyboard=True,
+            is_persistent=True
+        )
     return ReplyKeyboardMarkup(
         [[KeyboardButton("🛍️ Buka Toko", web_app=WebAppInfo(url=urls["store"]))]],
         resize_keyboard=True,
@@ -52,9 +66,19 @@ def build_main_menu_keyboard(user_id: int):
     urls = get_miniapp_urls()
     kb = []
     
-    # Storefront Mini App (Buka Toko)
-    kb.append([InlineKeyboardButton("🛍️ Buka Toko (Katalog Belanja)", web_app=WebAppInfo(url=urls["store"]))])
+    # Staff / Kasir: Tombol utama langsung buka Kasir POS
+    if is_kasir(user_id) or is_owner(user_id):
+        kb.append([InlineKeyboardButton("💻 Buka Kasir (POS)", web_app=WebAppInfo(url=urls["dashboard"]))])
+    else:
+        kb.append([InlineKeyboardButton("🛍️ Buka Toko (Katalog Belanja)", web_app=WebAppInfo(url=urls["store"]))])
     
+    # Baris fitur input produk: Tambah via Foto Catatan (AI OCR) & Kelola Spreadsheet Excel
+    row_new = [
+        InlineKeyboardButton("📷 Tambah via Foto", web_app=WebAppInfo(url=urls["stok_foto"])),
+        InlineKeyboardButton("📊 Spreadsheet Excel", web_app=WebAppInfo(url=urls["stok_excel"]))
+    ]
+    kb.append(row_new)
+
     row2 = []
     if can(user_id, "stock:view") or can(user_id, "product:view"):
         row2.append(InlineKeyboardButton("📦 Stok & Produk", web_app=WebAppInfo(url=urls["stok"])))

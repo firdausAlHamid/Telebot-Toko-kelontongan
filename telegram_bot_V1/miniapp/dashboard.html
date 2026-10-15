@@ -523,7 +523,16 @@
 
     <!-- ════ TAB 4: STOK & KELOLA PRODUK ════ -->
     <div class="tab-content" id="tab-stok">
-      <button class="btn-add-prod-master" onclick="openAddProductModal()">➕ Tambah Produk Baru ke Katalog</button>
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;">
+        <button class="btn-pos-submit" style="background:rgba(59,130,246,0.18); border:1px solid rgba(59,130,246,0.4); color:#60a5fa; height:44px; font-size:12px; font-weight:700; border-radius:12px; display:flex; align-items:center; justify-content:center;" onclick="openOcrPhotoModal()">
+          <span>Foto Catatan (AI)</span>
+        </button>
+        <button class="btn-pos-submit" style="background:rgba(16,185,129,0.18); border:1px solid rgba(16,185,129,0.4); color:#34d399; height:44px; font-size:12px; font-weight:700; border-radius:12px; display:flex; align-items:center; justify-content:center;" onclick="openSpreadsheetModal()">
+          <span>Spreadsheet</span>
+        </button>
+      </div>
+
+      <button class="btn-add-prod-master" onclick="openAddProductModal()">Tambah Produk Manual</button>
 
       <div class="grid-2">
         <div class="stat-card">
@@ -834,6 +843,134 @@
     </div>
   </div>
 
+  <!-- ── MODAL OCR FOTO CATATAN KERTAS (AI VISION) ── -->
+  <div class="modal-overlay" id="ocr-photo-modal">
+    <div class="modal-card" style="text-align:left; max-width:440px; padding:18px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+        <h3 style="font-size:15px; font-weight:800; color:#fff;">Tambah via Foto Catatan (AI)</h3>
+        <button class="btn-close-x" onclick="closeOcrPhotoModal()">✕</button>
+      </div>
+      
+      <!-- Panduan Langkah Singkat -->
+      <div style="font-size:11.5px; color:var(--text-sub); line-height:1.5; margin-bottom:10px;">
+        <div>1. Tulis nama produk, harga, dan stok dengan jelas di kertas.</div>
+        <div>2. Pastikan pencahayaan cukup dan kertas tidak terpotong.</div>
+        <div>3. Pilih gambar dari galeri atau ambil foto langsung.</div>
+      </div>
+
+      <!-- Area Contoh Foto Catatan Yang Benar -->
+      <div id="ocr-example-container" style="margin-bottom:12px;">
+        <div style="font-size:11px; font-weight:700; color:var(--text-sub); margin-bottom:6px;">Contoh Format Foto yang Benar:</div>
+        <div style="background:#0b111a; border:1px solid var(--border-card); border-radius:10px; padding:6px; overflow:hidden;">
+          <img id="ocr-example-image" src="contoh_catatan.jpg" alt="Contoh Catatan Yang Benar" style="width:100%; height:auto; max-height:160px; object-fit:contain; display:block; margin:0 auto; border-radius:6px;" />
+        </div>
+      </div>
+
+      <!-- Hidden File & Camera Inputs -->
+      <input type="file" id="ocr-file-input" accept="image/*" style="display:none;" onchange="handleOcrFileSelected(event)" />
+      <input type="file" id="ocr-camera-input" accept="image/*" capture="environment" style="display:none;" onchange="handleOcrFileSelected(event)" />
+
+      <!-- Dua Tombol: Pilih Gambar & Ambil Foto -->
+      <div style="display:flex; gap:8px; margin-bottom:6px;">
+        <button type="button" class="btn-pos-submit" style="flex:1; background:#2563eb; color:#fff; height:40px; font-size:12.5px; border-radius:10px;" onclick="document.getElementById('ocr-file-input').click()">
+          Pilih Gambar
+        </button>
+        <button type="button" class="btn-pos-submit" style="flex:1; background:#0ea5e9; color:#fff; height:40px; font-size:12.5px; border-radius:10px;" onclick="document.getElementById('ocr-camera-input').click()">
+          Ambil Foto
+        </button>
+      </div>
+      <span id="ocr-filename-hint" style="font-size:11px; color:var(--text-dim); display:block; text-align:center; margin-bottom:12px;">Belum ada foto dipilih</span>
+
+      <!-- Loading Indicator -->
+      <div id="ocr-loading" style="display:none; text-align:center; padding:14px 0;">
+        <div style="width:24px; height:24px; border:2px solid rgba(255,255,255,0.1); border-top-color:#38bdf8; border-radius:50%; animation:spin 0.8s linear infinite; margin:0 auto 8px;"></div>
+        <div style="font-size:12px; font-weight:700; color:#38bdf8;">Membaca tulisan catatan...</div>
+        <div style="font-size:11px; color:var(--text-sub);">Mohon tunggu sebentar</div>
+      </div>
+
+      <!-- Result Table (Editable) -->
+      <div id="ocr-result-container" style="display:none; margin-bottom:14px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+          <span style="font-size:12px; font-weight:700; color:#fff;" id="ocr-items-count">0 Produk Terdeteksi</span>
+          <button type="button" style="background:rgba(255,255,255,0.08); border:none; color:#fff; font-size:11px; padding:4px 8px; border-radius:6px; cursor:pointer;" onclick="addEmptyOcrRow()">+ Tambah Baris</button>
+        </div>
+        <div style="max-height:220px; overflow-y:auto; border:1px solid var(--border-card); border-radius:8px; padding:6px; background:#0b111a;" id="ocr-items-list">
+          <!-- Populated by renderOcrItems() -->
+        </div>
+      </div>
+
+      <div style="display:flex; gap:8px;">
+        <button class="btn-pos-submit" id="btn-save-ocr-batch" style="flex:1; height:40px; font-size:12.5px; border-radius:10px; display:none;" onclick="saveOcrBatch()">
+          Simpan ke Katalog
+        </button>
+        <button style="flex:1; height:40px; border-radius:10px; border:1px solid var(--border-card); background:transparent; color:#fff; cursor:pointer; font-size:12px;" onclick="closeOcrPhotoModal()">
+          Tutup
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── MODAL IMPORT / EKSPOR SPREADSHEET (EXCEL/CSV) ── -->
+  <div class="modal-overlay" id="spreadsheet-modal">
+    <div class="modal-card" style="text-align:left; max-width:440px; padding:18px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+        <h3 style="font-size:15px; font-weight:800; color:#fff;">Kelola Spreadsheet (Excel / CSV)</h3>
+        <button class="btn-close-x" onclick="closeSpreadsheetModal()">✕</button>
+      </div>
+
+      <!-- Panduan Singkat -->
+      <p style="font-size:11.5px; color:var(--text-sub); line-height:1.4; margin-bottom:10px;">
+        Format kolom: Nama Produk, Kategori, Harga, Stok.
+      </p>
+
+      <!-- Area Contoh Format Spreadsheet -->
+      <div id="excel-example-container" style="margin-bottom:12px;">
+        <div style="font-size:11px; font-weight:700; color:var(--text-sub); margin-bottom:6px;">Contoh Format File yang Benar:</div>
+        <div style="background:#0b111a; border:1px solid var(--border-card); border-radius:10px; padding:6px; overflow:hidden;">
+          <img id="excel-example-image" src="contoh_spreadsheet.png" alt="Contoh Format Spreadsheet" style="width:100%; height:auto; max-height:160px; object-fit:contain; display:block; margin:0 auto; border-radius:6px;" />
+        </div>
+      </div>
+
+      <!-- Unduh Template -->
+      <div style="margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:11.5px; color:var(--text-sub);">Belum punya file?</span>
+        <a id="btn-download-excel" href="/api/mini/stock/export-excel?tenant_id=1" download style="color:#38bdf8; text-decoration:none; font-size:11.5px; font-weight:700;">
+          Unduh Template (.xlsx)
+        </a>
+      </div>
+
+      <!-- Upload File -->
+      <input type="file" id="excel-file-input" accept=".xlsx, .xls, .csv" style="display:none;" onchange="handleExcelFileSelected(event)" />
+      <button type="button" class="btn-pos-submit" style="background:#2563eb; color:#fff; width:100%; height:40px; font-size:12.5px; border-radius:10px; margin-bottom:6px;" onclick="document.getElementById('excel-file-input').click()">
+        Pilih File Spreadsheet
+      </button>
+      <span id="excel-filename-hint" style="font-size:11px; color:var(--text-dim); display:block; text-align:center; margin-bottom:12px;">Belum ada file dipilih</span>
+
+      <!-- Mode Import Sederhana -->
+      <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-card); border-radius:10px; padding:10px 12px; margin-bottom:12px;">
+        <div style="font-size:11px; font-weight:700; color:var(--text-sub); margin-bottom:8px; text-transform:uppercase;">Pilihan Mode Import:</div>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          <label style="display:flex; align-items:center; gap:8px; font-size:12px; color:#fff; cursor:pointer;">
+            <input type="radio" name="excel_mode" value="update" checked />
+            <span>Update & Tambah (Aman)</span>
+          </label>
+          <label style="display:flex; align-items:center; gap:8px; font-size:12px; color:#94a3b8; cursor:pointer;">
+            <input type="radio" name="excel_mode" value="replace" />
+            <span>Timpa Semua (Reset Stok Toko)</span>
+          </label>
+        </div>
+      </div>
+
+      <button type="button" class="btn-pos-submit" id="btn-submit-excel" style="background:var(--brand-green); color:#000; width:100%; height:40px; font-size:12.5px; font-weight:800; border-radius:10px; margin-bottom:8px;" onclick="uploadExcelImport()">
+        Import Data
+      </button>
+
+      <button style="width:100%; height:38px; border-radius:10px; border:1px solid var(--border-card); background:transparent; color:#fff; cursor:pointer; font-size:12px;" onclick="closeSpreadsheetModal()">
+        Tutup
+      </button>
+    </div>
+  </div>
+
   <script>
     const tg = window.Telegram?.WebApp;
     if (tg) {
@@ -842,9 +979,26 @@
     }
 
     const API_BASE = window.location.origin;
+
+    // Global fetch interceptor: automatically inject ngrok bypass header into ALL requests
+    const _origFetch = window.fetch;
+    window.fetch = function(input, init = {}) {
+      init = init || {};
+      init.headers = init.headers || {};
+      if (init.headers instanceof Headers) {
+        if (!init.headers.has('ngrok-skip-browser-warning')) {
+          init.headers.set('ngrok-skip-browser-warning', 'true');
+        }
+      } else {
+        init.headers['ngrok-skip-browser-warning'] = 'true';
+      }
+      return _origFetch.call(this, input, init);
+    };
+
     const headers = {
       'Content-Type': 'application/json',
-      'X-Telegram-Init-Data': tg?.initData || ''
+      'X-Telegram-Init-Data': tg?.initData || '',
+      'ngrok-skip-browser-warning': 'true'
     };
 
     let allCatalogProducts = [];
@@ -1224,6 +1378,20 @@
       await loadOnlineOrders();
       await loadRecentPosTransactions();
       await loadStoreQrisData();
+
+      // Check URL query parameters (e.g. ?tab=stok&action=ocr atau ?action=excel)
+      const urlParams = new URLSearchParams(window.location.search);
+      const tabParam = urlParams.get('tab');
+      const actionParam = urlParams.get('action');
+      if (tabParam) {
+        const targetTabBtn = document.querySelector(`.tab-btn[data-tab="${tabParam}"]`);
+        if (targetTabBtn) targetTabBtn.click();
+      }
+      if (actionParam === 'ocr') {
+        openOcrPhotoModal();
+      } else if (actionParam === 'excel') {
+        openSpreadsheetModal();
+      }
     });
 
     function setupTabNavigation() {
@@ -2355,6 +2523,227 @@
         }
       } catch (e) {
         alert('Terjadi kesalahan koneksi.');
+      }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // ── FITUR OCR FOTO CATATAN KERTAS (AI VISION) ──
+    // ════════════════════════════════════════════════════════════════
+    let currentOcrItems = [];
+
+    function openOcrPhotoModal() {
+      document.getElementById('ocr-photo-modal').classList.add('active');
+    }
+
+    function closeOcrPhotoModal() {
+      document.getElementById('ocr-photo-modal').classList.remove('active');
+    }
+
+    async function handleOcrFileSelected(e) {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+
+      const hint = document.getElementById('ocr-filename-hint');
+      const loading = document.getElementById('ocr-loading');
+      const resultBox = document.getElementById('ocr-result-container');
+      const saveBtn = document.getElementById('btn-save-ocr-batch');
+
+      if (hint) hint.textContent = `File: ${file.name} (Memproses...)`;
+      if (loading) loading.style.display = 'block';
+      if (resultBox) resultBox.style.display = 'none';
+      if (saveBtn) saveBtn.style.display = 'none';
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const res = await fetch(`${API_BASE}/api/mini/stock/ocr-photo`, {
+          method: 'POST',
+          body: formData
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          currentOcrItems = data.items || [];
+          renderOcrItems();
+          if (hint) hint.textContent = `Berhasil membaca: ${file.name}`;
+        } else {
+          alert(data.detail || data.message || 'Gagal membaca gambar catatan.');
+          if (hint) hint.textContent = 'Gagal memproses gambar.';
+        }
+      } catch (err) {
+        alert('Terjadi kesalahan koneksi saat memproses gambar.');
+        if (hint) hint.textContent = 'Koneksi error.';
+      } finally {
+        if (loading) loading.style.display = 'none';
+      }
+    }
+
+    function renderOcrItems() {
+      const container = document.getElementById('ocr-items-list');
+      const countEl = document.getElementById('ocr-items-count');
+      const resultBox = document.getElementById('ocr-result-container');
+      const saveBtn = document.getElementById('btn-save-ocr-batch');
+
+      if (countEl) countEl.textContent = `${currentOcrItems.length} Produk Terdeteksi`;
+      if (resultBox) resultBox.style.display = 'block';
+      if (saveBtn) saveBtn.style.display = currentOcrItems.length > 0 ? 'block' : 'none';
+
+      if (!currentOcrItems.length) {
+        container.innerHTML = `<div style="text-align:center; color:var(--text-dim); padding:10px; font-size:11.5px;">Tidak ada produk terdeteksi. Silakan tambah baris manual.</div>`;
+        return;
+      }
+
+      container.innerHTML = currentOcrItems.map((item, idx) => `
+        <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06); border-radius:8px; padding:8px; margin-bottom:6px; display:flex; flex-direction:column; gap:4px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:6px;">
+            <input type="text" class="custom-input" style="margin-bottom:0; font-size:12px; font-weight:700; height:32px; flex:2;" value="${item.name || ''}" placeholder="Nama Barang" onchange="updateOcrItem(${idx}, 'name', this.value)" />
+            <select class="custom-input" style="margin-bottom:0; font-size:11px; height:32px; flex:1; background:#1c2738;" onchange="updateOcrItem(${idx}, 'category', this.value)">
+              <option value="Sembako" ${item.category === 'Sembako' ? 'selected' : ''}>Sembako</option>
+              <option value="Makanan" ${item.category === 'Makanan' ? 'selected' : ''}>Makanan</option>
+              <option value="Minuman" ${item.category === 'Minuman' ? 'selected' : ''}>Minuman</option>
+              <option value="Kebersihan" ${item.category === 'Kebersihan' ? 'selected' : ''}>Kebersihan</option>
+              <option value="Obat & Mandi" ${item.category === 'Obat & Mandi' ? 'selected' : ''}>Obat & Mandi</option>
+              <option value="Lainnya" ${item.category === 'Lainnya' ? 'selected' : ''}>Lainnya</option>
+            </select>
+            <button type="button" style="background:rgba(239,68,68,0.2); border:none; color:#f87171; border-radius:6px; width:26px; height:26px; cursor:pointer;" onclick="deleteOcrRow(${idx})">✕</button>
+          </div>
+          <div style="display:flex; gap:6px;">
+            <div style="flex:1;">
+              <span style="font-size:10px; color:var(--text-dim);">Harga (Rp):</span>
+              <input type="number" class="custom-input" style="margin-bottom:0; font-size:11.5px; height:30px;" value="${item.price || 0}" onchange="updateOcrItem(${idx}, 'price', parseInt(this.value)||0)" />
+            </div>
+            <div style="flex:1;">
+              <span style="font-size:10px; color:var(--text-dim);">Stok Awal:</span>
+              <input type="number" class="custom-input" style="margin-bottom:0; font-size:11.5px; height:30px;" value="${item.stock || 10}" onchange="updateOcrItem(${idx}, 'stock', parseInt(this.value)||1)" />
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function updateOcrItem(idx, field, val) {
+      if (currentOcrItems[idx]) {
+        currentOcrItems[idx][field] = val;
+      }
+    }
+
+    function deleteOcrRow(idx) {
+      currentOcrItems.splice(idx, 1);
+      renderOcrItems();
+    }
+
+    function addEmptyOcrRow() {
+      currentOcrItems.push({
+        name: '',
+        category: 'Sembako',
+        price: 0,
+        stock: 10
+      });
+      renderOcrItems();
+    }
+
+    async function saveOcrBatch() {
+      const validItems = currentOcrItems.filter(it => it.name && it.name.trim().length > 0);
+      if (!validItems.length) return alert('Tidak ada produk yang valid untuk disimpan.');
+
+      const saveBtn = document.getElementById('btn-save-ocr-batch');
+      const origText = saveBtn ? saveBtn.textContent : '';
+      if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Menyimpan...';
+      }
+
+      try {
+        const res = await fetch(`${API_BASE}/api/mini/stock/save-batch`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tenant_id: 1, items: validItems })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          alert(data.message);
+          closeOcrPhotoModal();
+          await loadPosCatalog();
+          await loadDashboardData();
+        } else {
+          alert(data.detail || data.message || 'Gagal menyimpan produk.');
+        }
+      } catch (err) {
+        alert('Terjadi kesalahan koneksi.');
+      } finally {
+        if (saveBtn) {
+          saveBtn.disabled = false;
+          saveBtn.textContent = origText;
+        }
+      }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // ── FITUR SPREADSHEET (EXCEL/CSV IMPORT & EXPORT) ──
+    // ════════════════════════════════════════════════════════════════
+    let selectedExcelFile = null;
+
+    function openSpreadsheetModal() {
+      document.getElementById('spreadsheet-modal').classList.add('active');
+    }
+
+    function closeSpreadsheetModal() {
+      document.getElementById('spreadsheet-modal').classList.remove('active');
+      selectedExcelFile = null;
+    }
+
+    function handleExcelFileSelected(e) {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      selectedExcelFile = file;
+      const hint = document.getElementById('excel-filename-hint');
+      if (hint) hint.textContent = `File siap diunggah: ${file.name}`;
+    }
+
+    async function uploadExcelImport() {
+      if (!selectedExcelFile) return alert('Silakan pilih file spreadsheet (.xlsx / .csv) terlebih dahulu.');
+
+      const modeInput = document.querySelector('input[name="excel_mode"]:checked');
+      const mode = modeInput ? modeInput.value : 'update';
+
+      if (mode === 'replace') {
+        const conf = confirm('PERINGATAN:\n\nMode "Timpa Semua" akan MENGHAPUS SEMUA produk lama di toko ini dan menggantinya dengan isi file spreadsheet baru.\n\nApakah Anda yakin ingin melanjutkan?');
+        if (!conf) return;
+      }
+
+      const submitBtn = document.getElementById('btn-submit-excel');
+      const origText = submitBtn ? submitBtn.textContent : '';
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Mengunggah & Memproses...';
+      }
+
+      const formData = new FormData();
+      formData.append('file', selectedExcelFile);
+      formData.append('mode', mode);
+      formData.append('tenant_id', '1');
+
+      try {
+        const res = await fetch(`${API_BASE}/api/mini/stock/import-excel`, {
+          method: 'POST',
+          body: formData
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          alert(data.message);
+          closeSpreadsheetModal();
+          await loadPosCatalog();
+          await loadDashboardData();
+        } else {
+          alert(data.detail || data.message || 'Gagal memproses spreadsheet.');
+        }
+      } catch (err) {
+        alert('Terjadi kesalahan koneksi saat import Excel.');
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = origText;
+        }
       }
     }
   </script>
