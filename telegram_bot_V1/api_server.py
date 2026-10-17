@@ -472,6 +472,91 @@ async def mini_transactions(request: Request, limit: int = 20, offset: int = 0):
     }
 
 
+@app.get("/api/mini/sales-chart")
+async def mini_sales_chart(request: Request, period: str = "today"):
+    """
+    Sales chart data with dynamic filters.
+    Periods: today, 24h, week, month, 6months, year
+    """
+    init_data = request.headers.get("X-Telegram-Init-Data", "")
+    tg_user, bot_user = get_user_from_init_data(init_data)
+
+    if not bot_user:
+        raise HTTPException(status_code=403, detail="User belum terdaftar.")
+
+    db = SessionLocal()
+    tenant_id = bot_user.tenant_id
+    now = datetime.now()
+
+    # Calculate date range based on period
+    if period == "today":
+        start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_date = now
+        group_format = "%H:00"  # Hourly
+    elif period == "24h":
+        start_date = now - timedelta(hours=24)
+        end_date = now
+        group_format = "%H:00"  # Hourly
+    elif period == "week":
+        start_date = now - timedelta(days=7)
+        end_date = now
+        group_format = "%Y-%m-%d"  # Daily
+    elif period == "month":
+        start_date = now - timedelta(days=30)
+        end_date = now
+        group_format = "%Y-%m-%d"  # Daily
+    elif period == "6months":
+        start_date = now - timedelta(days=180)
+        end_date = now
+        group_format = "%Y-%m"  # Monthly
+    elif period == "year":
+        start_date = now - timedelta(days=365)
+        end_date = now
+        group_format = "%Y-%m"  # Monthly
+    else:
+        start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_date = now
+        group_format = "%H:00"
+
+    # Query transactions
+    base_q = db.query(Transaction).filter(
+        Transaction.status == "completed",
+        Transaction.created_at >= start_date,
+        Transaction.created_at <= end_date,
+    )
+
+    if bot_user.role == "owner" and tenant_id:
+        base_q = base_q.filter(Transaction.tenant_id == tenant_id)
+    elif bot_user.role == "kasir":
+        base_q = base_q.filter(Transaction.user_id == bot_user.telegram_id)
+
+    txns = base_q.all()
+
+    # Group by time period
+    chart_data = {}
+    for t in txns:
+        label = t.created_at.strftime(group_format)
+        if label not in chart_data:
+            chart_data[label] = {"count": 0, "revenue": 0}
+        chart_data[label]["count"] += 1
+        chart_data[label]["revenue"] += t.grand_total or t.total_amount or 0
+
+    # Sort labels
+    sorted_labels = sorted(chart_data.keys())
+
+    db.close()
+
+    return {
+        "period": period,
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+        "labels": sorted_labels,
+        "data": [chart_data[label] for label in sorted_labels],
+        "total_transactions": sum(chart_data[label]["count"] for label in sorted_labels),
+        "total_revenue": sum(chart_data[label]["revenue"] for label in sorted_labels),
+    }
+
+
 @app.delete("/api/mini/kasir/{telegram_id}")
 async def mini_deactivate_kasir(telegram_id: int, request: Request):
     """Owner deactivates a kasir from their tenant."""

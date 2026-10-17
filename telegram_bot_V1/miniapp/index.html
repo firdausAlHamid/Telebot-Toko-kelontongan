@@ -25,13 +25,14 @@
     }
     body {
       font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text);
-      min-height: 100vh; overflow-x: hidden;
+      min-height: 100vh; overflow-x: hidden; padding-top: 140px; /* Space for fixed header */
     }
 
-    /* ── Header ── */
+    /* ── Fixed Header ── */
     .header {
       background: linear-gradient(135deg, var(--accent) 0%, #8b5cf6 100%);
-      padding: 20px 16px 20px; position: relative; overflow: hidden;
+      padding: 20px 16px 20px; position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      overflow: hidden;
     }
     .header::before {
       content: ''; position: absolute; inset: 0;
@@ -47,9 +48,10 @@
     .header-name { font-size: 22px; font-weight: 800; margin-top: 14px; position: relative; }
     .header-sub { font-size: 13px; opacity: .75; margin-top: 4px; position: relative; }
 
-    /* ── Tabs ── */
+    /* ── Fixed Tabs (Sticky Navbar) ── */
     .tabs {
-      display: flex; background: var(--surface); border-bottom: 1px solid var(--border); overflow-x: auto;
+      display: flex; background: var(--surface); border-bottom: 1px solid var(--border);
+      overflow-x: auto; position: fixed; top: 105px; left: 0; right: 0; z-index: 99;
     }
     .tab {
       flex: 1; padding: 13px 8px; text-align: center; font-size: 12px; font-weight: 600;
@@ -57,6 +59,26 @@
       border-bottom: 2px solid transparent; transition: all .2s; white-space: nowrap; min-width: 80px;
     }
     .tab.active { color: var(--accent2); border-bottom-color: var(--accent2); }
+
+    /* ── Fixed Chart Filter (Sticky) ── */
+    .chart-filters {
+      position: sticky; top: 140px; z-index: 98; background: var(--bg);
+      padding: 12px 16px 8px; border-bottom: 1px solid var(--border);
+      display: none; /* Hidden by default, shown in ringkasan tab */
+    }
+    .chart-filters.show { display: block; }
+    .filter-row {
+      display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px;
+    }
+    .filter-btn {
+      padding: 8px 14px; border-radius: 20px; border: 1px solid var(--border);
+      background: var(--surface2); color: var(--text2); font-size: 11px; font-weight: 600;
+      cursor: pointer; white-space: nowrap; transition: all .2s;
+    }
+    .filter-btn.active {
+      background: var(--accent); color: white; border-color: var(--accent);
+    }
+
     .content { padding: 16px; }
     .section { display: none; }
     .section.active { display: block; }
@@ -120,10 +142,42 @@
     <button class="tab owner-only" data-tab="kasir" style="display:none">👥 Kasir</button>
   </div>
 
+  <!-- Chart Filter (Sticky below tabs, only visible in Ringkasan tab) -->
+  <div class="chart-filters" id="chart-filters">
+    <div class="filter-row">
+      <button class="filter-btn active" data-period="today">📅 Hari Ini</button>
+      <button class="filter-btn" data-period="24h">🕐 24 Jam</button>
+      <button class="filter-btn" data-period="week">📊 1 Minggu</button>
+      <button class="filter-btn" data-period="month">📈 1 Bulan</button>
+      <button class="filter-btn" data-period="6months">📉 6 Bulan</button>
+      <button class="filter-btn" data-period="year">🗓️ 1 Tahun</button>
+    </div>
+  </div>
+
   <div class="content" id="dashboard-content">
-    
+
     <!-- TAB: RINGKASAN -->
     <div class="section active" id="tab-ringkasan">
+      <!-- Sales Chart Card -->
+      <div class="card">
+        <div class="card-label" id="chart-title">Grafik Penjualan - Hari Ini</div>
+        <canvas id="salesChart" width="100" height="50"></canvas>
+      </div>
+
+      <!-- Summary Stats -->
+      <div class="stat-grid" style="margin-bottom:12px">
+        <div class="stat-card">
+          <div class="stat-icon">🛒</div>
+          <div class="stat-label">Total Transaksi</div>
+          <div class="stat-val" id="chart-total-count">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">💰</div>
+          <div class="stat-label">Total Pendapatan</div>
+          <div class="stat-val" id="chart-total-revenue">Rp0</div>
+        </div>
+      </div>
+
       <div class="card">
         <div class="card-label">Penjualan Hari Ini</div>
         <div class="card-value green" id="today-revenue">Rp0</div>
@@ -140,7 +194,7 @@
           <div class="stat-val" id="today-discount">Rp0</div>
         </div>
       </div>
-      
+
       <div class="card owner-only" id="month-card" style="display:none">
         <div class="card-label">Penjualan Bulan Ini</div>
         <div class="card-value gold" id="month-revenue">Rp0</div>
@@ -190,23 +244,26 @@
     </div>
 
   </div>
-  
+
   <div class="toast" id="toast"></div>
 
   <script>
     const tg = window.Telegram.WebApp;
     tg.ready(); tg.expand(); tg.setHeaderColor('#0f0f14'); tg.setBackgroundColor('#0f0f14');
     const initData = tg.initData;
-    // Use current origin so it automatically points to the ngrok URL
     const API_BASE = window.location.origin;
     const headers = { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': initData };
-    
+
     function fmtRp(n) { return 'Rp' + Number(n).toLocaleString('id-ID'); }
     function showToast(msg, ms = 2000) {
       const el = document.getElementById('toast');
       el.textContent = msg; el.classList.add('show');
       setTimeout(() => el.classList.remove('show'), ms);
     }
+
+    // Global chart instance
+    let salesChartInstance = null;
+    let currentPeriod = 'today';
 
     // Tab switcher
     document.querySelectorAll('.tab').forEach(btn => {
@@ -215,43 +272,111 @@
         document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
         btn.classList.add('active');
         document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+
+        // Show/hide chart filters only in ringkasan tab
+        if (btn.dataset.tab === 'ringkasan') {
+          document.getElementById('chart-filters').classList.add('show');
+        } else {
+          document.getElementById('chart-filters').classList.remove('show');
+        }
+
         if (btn.dataset.tab === 'transaksi') loadTransaksi();
         if (btn.dataset.tab === 'kasir') loadKasir();
       });
     });
 
-    async function loadRingkasan() {
+    // Chart filter buttons
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentPeriod = btn.dataset.period;
+        loadSalesChart(currentPeriod);
+      });
+    });
+
+    async function loadSalesChart(period = 'today') {
       try {
-        const res = await fetch(API_BASE + '/api/mini/dashboard', { headers });
+        const res = await fetch(API_BASE + `/api/mini/sales-chart?period=${period}`, { headers });
         const data = await res.json();
-        
-        document.getElementById('store-badge').textContent = '🏪 ' + (data.store_name || 'Toko');
-        document.getElementById('role-badge').textContent = data.role === 'owner' ? '👑 Owner' : '👤 Kasir';
-        document.getElementById('header-name').textContent = 'Halo, ' + (data.full_name || 'User') + '! 👋';
-        
-        if (data.role === 'owner') {
-          document.querySelectorAll('.owner-only').forEach(el => el.style.display = '');
+
+        // Update title
+        const titles = {
+          'today': 'Grafik Penjualan - Hari Ini',
+          '24h': 'Grafik Penjualan - 24 Jam Terakhir',
+          'week': 'Grafik Penjualan - 1 Minggu Terakhir',
+          'month': 'Grafik Penjualan - 1 Bulan Terakhir',
+          '6months': 'Grafik Penjualan - 6 Bulan Terakhir',
+          'year': 'Grafik Penjualan - 1 Tahun Terakhir'
+        };
+        document.getElementById('chart-title').textContent = titles[period] || 'Grafik Penjualan';
+
+        // Update stats
+        document.getElementById('chart-total-count').textContent = data.total_transactions;
+        document.getElementById('chart-total-revenue').textContent = fmtRp(data.total_revenue);
+
+        // Prepare chart data
+        const labels = data.labels.length > 0 ? data.labels : ['No Data'];
+        const revenues = data.data.length > 0 ? data.data.map(d => d.revenue) : [0];
+
+        const ctx = document.getElementById('salesChart').getContext('2d');
+
+        // Destroy existing chart
+        if (salesChartInstance) {
+          salesChartInstance.destroy();
         }
 
-        const t = data.today;
-        document.getElementById('today-revenue').textContent = fmtRp(t.total_revenue);
-        document.getElementById('today-count').textContent = t.total_transactions;
-        document.getElementById('today-discount').textContent = fmtRp(t.total_discount);
-
-        if (data.month_revenue !== null) {
-          document.getElementById('month-revenue').textContent = fmtRp(data.month_revenue);
-          document.getElementById('month-card').style.display = '';
-        }
-        
-        if (data.stock) {
-          document.getElementById('total-products').textContent = data.stock.total_products;
-          const ls = document.getElementById('low-stock');
-          ls.textContent = data.stock.low_stock;
-          if (data.stock.low_stock > 0) {
-            ls.classList.remove('green'); ls.classList.add('red');
+        // Create new chart
+        salesChartInstance = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: labels,
+            datasets: [{
+              label: 'Pendapatan (Rp)',
+              data: revenues,
+              borderColor: '#6c63ff',
+              backgroundColor: 'rgba(108, 99, 255, 0.1)',
+              borderWidth: 2,
+              fill: true,
+              tension: 0.4
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: function(context) {
+                    return 'Rp' + context.parsed.y.toLocaleString('id-ID');
+                  }
+                }
+              }
+            },
+            scales: {
+              y: {
+                beginAtZero: true,
+                ticks: {
+                  callback: function(value) {
+                    if (value >= 1000000) return 'Rp' + (value / 1000000).toFixed(1) + 'M';
+                    if (value >= 1000) return 'Rp' + (value / 1000).toFixed(0) + 'K';
+                    return 'Rp' + value;
+                  },
+                  color: '#94a3b8'
+                },
+                grid: { color: 'rgba(255,255,255,0.05)' }
+              },
+              x: {
+                ticks: { color: '#94a3b8' },
+                grid: { display: false }
+              }
+            }
           }
-        }
-      } catch(e) {}
+        });
+      } catch(e) {
+        console.error('Failed to load sales chart:', e);
+      }
     }
 
     async function loadTopProducts() {
@@ -300,15 +425,15 @@
               label: 'Total Stok',
               data: data.map(d => d.total_stock),
               backgroundColor: '#6c63ff',
-              borderRadius: 4
             }]
           },
           options: {
             responsive: true,
+            maintainAspectRatio: false,
             plugins: { legend: { display: false } },
             scales: {
-              y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' } },
-              x: { grid: { display: false } }
+              y: { beginAtZero: true, ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+              x: { ticks: { color: '#94a3b8' }, grid: { display: false } }
             }
           }
         });
@@ -317,27 +442,69 @@
 
     async function loadTransaksi() {
       const list = document.getElementById('trx-list');
+      list.innerHTML = '<div class="loading">Loading...</div>';
       try {
-        const res = await fetch(API_BASE + '/api/mini/transactions?limit=20', { headers });
+        const res = await fetch(API_BASE + '/api/mini/transactions', { headers });
         const data = await res.json();
-        if (!data.transactions.length) return list.innerHTML = '<div class="empty">Belum ada transaksi.</div>';
-        list.innerHTML = data.transactions.map(t => `
+        if(!data.length) return list.innerHTML = '<div class="empty">Belum ada transaksi.</div>';
+        list.innerHTML = data.map(t => `
           <div class="row-item">
             <div>
-              <div class="row-title">${t.invoice_no}</div>
-              <div class="row-sub">${t.payment_method}</div>
+              <div class="row-title">#${t.id} - ${t.payment_method}</div>
+              <div class="row-sub">${t.created_at}</div>
             </div>
-            <div class="row-right" style="color:var(--green)">${fmtRp(t.grand_total)}</div>
+            <div class="row-right green">${fmtRp(t.grand_total || t.total_amount)}</div>
           </div>
         `).join('');
       } catch(e) { list.innerHTML = '<div class="empty">Gagal memuat.</div>'; }
     }
 
-    // Init Calls
+    async function loadKasir() {
+      const list = document.getElementById('kasir-list');
+      list.innerHTML = '<div class="loading">Loading...</div>';
+      try {
+        const res = await fetch(API_BASE + '/api/mini/kasir-list', { headers });
+        const data = await res.json();
+        if(!data.length) return list.innerHTML = '<div class="empty">Belum ada kasir.</div>';
+        list.innerHTML = data.map(k => `
+          <div class="row-item">
+            <div>
+              <div class="row-title">${k.full_name}</div>
+              <div class="row-sub">@${k.username || 'no_username'} • Status: ${k.is_active ? '✅ Aktif' : '❌ Nonaktif'}</div>
+            </div>
+          </div>
+        `).join('');
+      } catch(e) { list.innerHTML = '<div class="empty">Gagal memuat.</div>'; }
+    }
+
+    document.getElementById('btn-gen-token').addEventListener('click', async () => {
+      try {
+        const res = await fetch(API_BASE + '/api/mini/generate-kasir-token', {
+          method: 'POST',
+          headers
+        });
+        const data = await res.json();
+        if(data.token) {
+          tg.showPopup({
+            title: 'Token Kasir Dibuat',
+            message: `Token: ${data.token}\n\nBagikan ke kasir baru. Berlaku 24 jam.`,
+            buttons: [{ type: 'ok' }]
+          });
+        }
+      } catch(e) {
+        showToast('Gagal membuat token');
+      }
+    });
+
+    // On page load
     loadRingkasan();
     loadTopProducts();
     loadConsignment();
     loadStockChart();
+    loadSalesChart('today'); // Load default chart
+
+    // Show chart filters by default (ringkasan tab is active)
+    document.getElementById('chart-filters').classList.add('show');
   </script>
 </body>
 </html>
