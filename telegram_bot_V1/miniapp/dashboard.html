@@ -547,7 +547,9 @@
 
       <div class="stat-card">
         <div style="font-size:13px; font-weight:800; margin-bottom:10px;">Ringkasan Stok per Kategori</div>
-        <canvas id="stockCategoryChart" height="180"></canvas>
+        <div style="position:relative; height:240px;">
+          <canvas id="stockCategoryChart"></canvas>
+        </div>
       </div>
     </div>
 
@@ -1922,7 +1924,7 @@
         }
 
         container.innerHTML = trxs.map(t => {
-          const isVoid = t.status === 'void' || t.status === 'cancelled';
+          const isVoid = t.status === 'void' || t.status === 'voided' || t.status === 'cancelled';
           const itemsText = t.items.map(it => `${it.name} (${it.qty})`).join(', ');
           return `
             <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-card); border-radius:10px; padding:10px 12px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; gap:8px;">
@@ -2173,27 +2175,69 @@
 
         if (stockChartInstance) stockChartInstance.destroy();
 
+        // Sort by stock descending untuk visualisasi yang lebih menarik
+        const sortedData = data.sort((a, b) => b.total_stock - a.total_stock);
+
+        // Color gradient untuk setiap kategori (dari hijau ke biru)
+        const colors = [
+          '#22c55e', // green
+          '#10b981', // emerald
+          '#14b8a6', // teal
+          '#06b6d4', // cyan
+          '#3b82f6', // blue
+        ];
+
         stockChartInstance = new Chart(ctx, {
           type: 'bar',
           data: {
-            labels: data.map(d => d.category),
+            labels: sortedData.map(d => d.category),
             datasets: [{
-              label: 'Stok',
-              data: data.map(d => d.total_stock),
-              backgroundColor: '#22c55e',
-              borderRadius: 6
+              label: 'Total Stok',
+              data: sortedData.map(d => d.total_stock),
+              backgroundColor: sortedData.map((_, idx) => colors[idx % colors.length]),
+              borderRadius: 8,
+              barThickness: 28
             }]
           },
           options: {
+            indexAxis: 'y', // HORIZONTAL BAR (Gantt-style)
             responsive: true,
-            plugins: { legend: { display: false } },
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                padding: 12,
+                titleColor: '#fff',
+                bodyColor: '#94a3b8',
+                borderColor: 'rgba(255, 255, 255, 0.1)',
+                borderWidth: 1,
+                displayColors: false,
+                callbacks: {
+                  label: function(context) {
+                    return 'Total Stok: ' + context.parsed.x + ' unit';
+                  }
+                }
+              }
+            },
             scales: {
-              y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.06)' }, ticks: { color: '#94a3b8' } },
-              x: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 10 } } }
+              x: {
+                beginAtZero: true,
+                grid: { color: 'rgba(255,255,255,0.06)', lineWidth: 1 },
+                ticks: { color: '#94a3b8', font: { size: 11, weight: '600' } },
+                border: { display: false }
+              },
+              y: {
+                grid: { display: false },
+                ticks: { color: '#fff', font: { size: 12, weight: '700' } },
+                border: { display: false }
+              }
             }
           }
         });
-      } catch(e){}
+      } catch(e){
+        console.error('Error loading stock chart:', e);
+      }
     }
 
     // ── Add Master Product ──

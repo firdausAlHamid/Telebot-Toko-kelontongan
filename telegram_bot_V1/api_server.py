@@ -35,6 +35,17 @@ from database import (
 from sqlalchemy import func, desc
 from receipt_generator import generate_receipt_image
 import qris_service
+from transaction_service import (
+    apply_sale_stock,
+    restore_sale_stock,
+    settle_qris_paid,
+    mark_qris_terminal,
+    find_insufficient_stock,
+    format_stock_error,
+    VOID_STATUSES,
+    QRIS_PAID_STATUSES,
+    QRIS_DEAD_STATUSES,
+)
 
 # ── Try to import config, fall back to env vars ───────────────────────────────
 try:
@@ -659,8 +670,7 @@ async def mini_store_info(tenant_id: int | None = None):
     tenant = None
     if tenant_id:
         tenant = db.query(Tenant).filter(Tenant.id == tenant_id, Tenant.is_active == True).first()
-    if not tenant:
-        # Default to first active tenant with products or fallback
+    if not tenant and not tenant_id:
         first_with_prod = db.query(Product.tenant_id).filter(Product.tenant_id != None).first()
         preferred_tid = first_with_prod[0] if first_with_prod else 1
         tenant = db.query(Tenant).filter(Tenant.id == preferred_tid).first()
@@ -794,13 +804,8 @@ async def mini_catalog(tenant_id: int | None = None, category: str | None = None
     db = SessionLocal()
     tid = tenant_id
 
-    # Fallback to tenant with products if specified has none
-    if tid:
-        has_items = db.query(Product).filter(Product.tenant_id == tid).first()
-        if not has_items:
-            first_with_prod = db.query(Product.tenant_id).filter(Product.tenant_id != None).first()
-            tid = first_with_prod[0] if first_with_prod else None
-    else:
+    # Only auto-pick a tenant when the client did not specify one
+    if tid is None:
         first_with_prod = db.query(Product.tenant_id).filter(Product.tenant_id != None).first()
         tid = first_with_prod[0] if first_with_prod else None
 
@@ -870,6 +875,26 @@ async def mini_catalog(tenant_id: int | None = None, category: str | None = None
     }
 
 
+def _resolve_sale_products(db, items, tenant_id):
+    """Load products from DB (not client prices) and reject oversell."""
+    resolved = []
+    for it in items:
+        q = db.query(Product).filter(Product.id == it.id)
+        if tenant_id:
+            q = q.filter((Product.tenant_id == tenant_id) | (Product.tenant_id == None))
+        prod = q.first()
+        if not prod:
+            raise HTTPException(status_code=400, detail=f"Produk tidak ditemukan: {it.name or it.id}")
+        qty = int(it.quantity or 0)
+        if qty <= 0:
+            raise HTTPException(status_code=400, detail=f"Jumlah tidak valid untuk {prod.item_name}")
+        resolved.append((prod, qty))
+    missing = find_insufficient_stock(db, {p.id: qty for p, qty in resolved})
+    if missing:
+        raise HTTPException(status_code=400, detail=format_stock_error(missing))
+    return resolved
+
+
 @app.post("/api/mini/order")
 async def mini_create_order(req: CreateOrderRequest):
     """Receive orders from the Telegram Mini App."""
@@ -882,8 +907,14 @@ async def mini_create_order(req: CreateOrderRequest):
     store_name = tenant.store_name if tenant else "Toko Kelontong"
     tenant_owner_id = tenant.owner_id if tenant else None
 
-    # Calculate totals
-    subtotal = sum(it.price * it.quantity for it in req.items)
+    try:
+        resolved = _resolve_sale_products(db, req.items, tenant_id)
+    except HTTPException:
+        db.close()
+        raise
+
+    # Calculate totals from database prices
+    subtotal = sum(prod.price * qty for prod, qty in resolved)
     grand_total = subtotal
 
     tg_user = req.telegram_user or {}
@@ -912,37 +943,30 @@ async def mini_create_order(req: CreateOrderRequest):
     trx_no = f"INV-{new_trx.id:06d}"
     new_trx.invoice_no = trx_no
 
-    # Insert items and deduct stock
-    for it in req.items:
-        item_subtotal = it.price * it.quantity
-        trx_item = TransactionItem(
+    for prod, qty in resolved:
+        item_subtotal = prod.price * qty
+        db.add(TransactionItem(
             transaction_id=new_trx.id,
-            product_id=it.id,
-            product_name=it.name,
-            unit_price=it.price,
-            quantity=it.quantity,
+            product_id=prod.id,
+            product_name=prod.item_name,
+            unit_price=prod.price,
+            quantity=qty,
             discount_type=None,
             discount_value=0,
             discount_amount=0,
             subtotal=item_subtotal
-        )
-        db.add(trx_item)
-
-        prod = db.query(Product).filter(Product.id == it.id).first()
-        if prod:
-            prod.stock = max(0, prod.stock - it.quantity)
-            movement = StockMovement(
-                product_id=it.id,
-                tenant_id=tenant_id,
-                movement_type="out",
-                quantity=-it.quantity,
-                reference=trx_no,
-                notes=f"Pesanan Mini App ({req.delivery_type})",
-                created_by=user_id
-            )
-            db.add(movement)
+        ))
 
     db.commit()
+
+    # Cash/COD deduct now; QRIS waits until paid
+    if not is_qris:
+        apply_sale_stock(
+            db, new_trx,
+            notes=f"Pesanan Mini App ({req.delivery_type})",
+            created_by=user_id,
+        )
+        db.commit()
 
     # Integrasi KlikQRIS Sandbox jika metode bayar adalah QRIS
     qris_info = None
@@ -983,6 +1007,13 @@ async def mini_create_order(req: CreateOrderRequest):
             }
         except Exception as e:
             logger.error(f"Error initiating KlikQRIS transaction: {e}")
+            new_trx.status = "cancelled"
+            db.commit()
+            db.close()
+            raise HTTPException(
+                status_code=502,
+                detail="Gagal membuat QRIS. Silakan coba metode lain atau ulangi pesanan."
+            )
 
     db.close()
 
@@ -1110,20 +1141,11 @@ async def check_qris_status_endpoint(order_id: str):
     res = await qris_service.get_qris_status(order_id)
 
     if res.get("success"):
-        status = res.get("status", "").upper()
-        db = SessionLocal()
-        qris_trx = db.query(QrisTransaction).filter(QrisTransaction.order_id == order_id).first()
-        if qris_trx:
-            qris_trx.status = status
-            if status in ["SUCCESS", "PAID"]:
-                qris_trx.paid_at = res.get("paid_at") or datetime.now().isoformat()
-                # Update status transaksi utama menjadi completed jika ada invoice
-                if qris_trx.invoice_no:
-                    trx = db.query(Transaction).filter(Transaction.invoice_no == qris_trx.invoice_no).first()
-                    if trx:
-                        trx.status = "completed"
-            db.commit()
-        db.close()
+        status = (res.get("status") or "").upper()
+        if status in QRIS_PAID_STATUSES or res.get("is_paid"):
+            settle_qris_paid(order_id, res.get("paid_at"))
+        elif status in QRIS_DEAD_STATUSES:
+            mark_qris_terminal(order_id, status)
 
     return res
 
@@ -1151,39 +1173,45 @@ async def klikqris_webhook(request: Request):
 
     db = SessionLocal()
     qris_trx = db.query(QrisTransaction).filter(QrisTransaction.order_id == order_id).first()
+    stored_sig = qris_trx.signature if qris_trx else None
+    db.close()
 
-    # Idempotency check: jika sudah berstatus PAID / SUCCESS, abaikan
-    if qris_trx and qris_trx.status in ["PAID", "SUCCESS"]:
-        db.close()
+    if not qris_trx:
+        return {"status": False, "message": "Unknown order_id"}
+
+    if not qris_service.validate_webhook_signature(stored_sig, incoming_sig, payload):
+        raise HTTPException(status_code=403, detail="Invalid QRIS signature")
+
+    if (qris_trx.status or "").upper() in QRIS_PAID_STATUSES:
         return {"status": True, "message": "Transaction already paid/processed"}
 
-    if qris_trx:
-        qris_trx.status = "PAID"
-        qris_trx.paid_at = payload.get("payment_date") or datetime.now().isoformat()
+    if incoming_status in QRIS_DEAD_STATUSES:
+        mark_qris_terminal(order_id, incoming_status)
+        return {"status": True, "message": f"Marked {incoming_status}"}
 
-        # Update status pesanan / transaksi utama
-        if qris_trx.invoice_no:
-            trx = db.query(Transaction).filter(Transaction.invoice_no == qris_trx.invoice_no).first()
-            if trx:
-                trx.status = "completed"
-                # Notifikasi Telegram pembayaran lunas
-                if BOT_TOKEN and trx.user_id:
-                    try:
-                        async with httpx.AsyncClient(timeout=5.0) as client:
-                            await client.post(
-                                f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-                                json={
-                                    "chat_id": trx.user_id,
-                                    "text": f"✅ *PEMBAYARAN QRIS TERVERIFIKASI!*\n\nPesanan `{trx.invoice_no}` sebesar *Rp{trx.grand_total:,}* telah berhasil dibayar.\nSilakan datang ke toko untuk mengambil pesanan Anda.",
-                                    "parse_mode": "Markdown"
-                                }
-                            )
-                    except Exception as e:
-                        logger.error(f"Failed to notify user about paid webhook: {e}")
+    if incoming_status not in QRIS_PAID_STATUSES:
+        return {"status": True, "message": f"Ignored status {incoming_status or 'EMPTY'}"}
 
-        db.commit()
+    result = settle_qris_paid(order_id, payload.get("payment_date") or payload.get("paid_at"))
+    if result.get("ok") and not result.get("already") and BOT_TOKEN and result.get("user_id"):
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                await client.post(
+                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                    json={
+                        "chat_id": result["user_id"],
+                        "text": (
+                            f"✅ *PEMBAYARAN QRIS TERVERIFIKASI!*\n\n"
+                            f"Pesanan `{result.get('invoice_no')}` sebesar "
+                            f"*Rp{result.get('grand_total') or 0:,}* telah berhasil dibayar.\n"
+                            f"Silakan datang ke toko untuk mengambil pesanan Anda."
+                        ),
+                        "parse_mode": "Markdown"
+                    }
+                )
+        except Exception as e:
+            logger.error(f"Failed to notify user about paid webhook: {e}")
 
-    db.close()
     return {"status": True, "message": "Webhook processed successfully"}
 
 
@@ -1202,7 +1230,13 @@ async def pos_direct_checkout(req: PosCheckoutRequest):
     tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
     store_name = tenant.store_name if tenant else "Toko Ciamis"
 
-    subtotal = sum(it.price * it.quantity for it in req.items)
+    try:
+        resolved = _resolve_sale_products(db, req.items, tenant_id)
+    except HTTPException:
+        db.close()
+        raise
+
+    subtotal = sum(prod.price * qty for prod, qty in resolved)
     discount = req.discount or 0
     grand_total = max(0, subtotal - discount)
     now = datetime.now()
@@ -1238,36 +1272,28 @@ async def pos_direct_checkout(req: PosCheckoutRequest):
     trx_no = f"INV-{new_trx.id:06d}"
     new_trx.invoice_no = trx_no
 
-    # Deduct stock & save transaction items
-    for it in req.items:
-        trx_item = TransactionItem(
+    for prod, qty in resolved:
+        db.add(TransactionItem(
             transaction_id=new_trx.id,
-            product_id=it.id,
-            product_name=it.name,
-            unit_price=it.price,
-            quantity=it.quantity,
+            product_id=prod.id,
+            product_name=prod.item_name,
+            unit_price=prod.price,
+            quantity=qty,
             discount_type=None,
             discount_value=0,
             discount_amount=0,
-            subtotal=it.price * it.quantity
-        )
-        db.add(trx_item)
-
-        prod = db.query(Product).filter(Product.id == it.id).first()
-        if prod:
-            prod.stock = max(0, prod.stock - it.quantity)
-            movement = StockMovement(
-                product_id=it.id,
-                tenant_id=tenant_id,
-                movement_type="out",
-                quantity=-it.quantity,
-                reference=trx_no,
-                notes="Penjualan Langsung Kasir POS",
-                created_by=req.user_id or 0
-            )
-            db.add(movement)
+            subtotal=prod.price * qty
+        ))
 
     db.commit()
+
+    if not is_qris:
+        apply_sale_stock(
+            db, new_trx,
+            notes="Penjualan Langsung Kasir POS",
+            created_by=req.user_id or 0,
+        )
+        db.commit()
 
     qris_data = None
     if is_qris:
@@ -1297,6 +1323,13 @@ async def pos_direct_checkout(req: PosCheckoutRequest):
             qris_data = qris_res
         except Exception as e:
             logger.error(f"POS KlikQRIS error: {e}")
+            new_trx.status = "cancelled"
+            db.commit()
+            db.close()
+            raise HTTPException(
+                status_code=502,
+                detail="Gagal membuat QRIS. Transaksi dibatalkan, stok tidak dipotong."
+            )
 
     db.close()
 
@@ -1325,28 +1358,18 @@ async def pos_void_transaction(invoice_no: str):
         db.close()
         raise HTTPException(status_code=404, detail="Transaksi tidak ditemukan.")
 
-    if trx.status in ["void", "cancelled"]:
+    if (trx.status or "") in VOID_STATUSES:
         db.close()
         raise HTTPException(status_code=400, detail="Transaksi ini sudah pernah dibatalkan sebelumnya.")
 
-    # Kembalikan stok barang yang sebelumnya keluar
-    items = db.query(TransactionItem).filter(TransactionItem.transaction_id == trx.id).all()
-    for it in items:
-        prod = db.query(Product).filter(Product.id == it.product_id).first()
-        if prod:
-            prod.stock += it.quantity
-            movement = StockMovement(
-                product_id=it.product_id,
-                tenant_id=trx.tenant_id,
-                movement_type="in",
-                quantity=it.quantity,
-                reference=f"VOID-{invoice_no}",
-                notes="Pembatalan Transaksi Kasir (Salah Pencet / Retur)",
-                created_by=trx.user_id or 0
-            )
-            db.add(movement)
-
-    trx.status = "void"
+    restore_sale_stock(
+        db, trx,
+        notes="Pembatalan Transaksi Kasir (Salah Pencet / Retur)",
+        created_by=trx.user_id or 0,
+    )
+    trx.status = "voided"
+    trx.voided_at = datetime.now()
+    trx.void_reason = "Dibatalkan kasir POS"
     db.commit()
     db.close()
     return {
@@ -1364,28 +1387,18 @@ async def pos_restore_transaction(invoice_no: str):
         db.close()
         raise HTTPException(status_code=404, detail="Transaksi tidak ditemukan.")
 
-    if trx.status not in ["void", "cancelled"]:
+    if (trx.status or "") not in VOID_STATUSES:
         db.close()
         raise HTTPException(status_code=400, detail="Transaksi ini sedang aktif (tidak dalam status batal).")
 
-    # Ambil kembali stok barang yang dipulihkan
-    items = db.query(TransactionItem).filter(TransactionItem.transaction_id == trx.id).all()
-    for it in items:
-        prod = db.query(Product).filter(Product.id == it.product_id).first()
-        if prod:
-            prod.stock = max(0, prod.stock - it.quantity)
-            movement = StockMovement(
-                product_id=it.product_id,
-                tenant_id=trx.tenant_id,
-                movement_type="out",
-                quantity=it.quantity,
-                reference=f"RESTORE-{invoice_no}",
-                notes="Pemulihan Transaksi Kasir (Stok Kembali Keambil)",
-                created_by=trx.user_id or 0
-            )
-            db.add(movement)
-
+    apply_sale_stock(
+        db, trx,
+        notes="Pemulihan Transaksi Kasir (Stok Kembali Keambil)",
+        created_by=trx.user_id or 0,
+    )
     trx.status = "completed"
+    trx.voided_at = None
+    trx.void_reason = None
     db.commit()
     db.close()
     return {
@@ -1691,7 +1704,10 @@ async def mini_upload_image(
 # ==============================================================================
 import base64
 import io
-import pandas as pd
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
 from openai import AsyncOpenAI
 from config import OPENROUTER_API_KEY, OPENROUTER_CHAT_MODEL
 

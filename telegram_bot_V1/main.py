@@ -47,6 +47,15 @@ from database import SessionLocal, CartItem, Product, Transaction, TransactionIt
 from receipt_generator import generate_receipt_image
 from config import BOT_TOKEN, WHATSAPP_NUMBER, OWNER_TELEGRAM_ID
 from promotion_service import get_active_promos_for_products, calculate_cart_with_discounts, get_recommendations
+import qris_service
+from transaction_service import (
+    apply_sale_stock,
+    find_insufficient_stock,
+    format_stock_error,
+    save_line_items,
+    settle_qris_paid,
+    mark_qris_terminal,
+)
 from admin_handlers import get_admin_conv_handler
 from admin_schedule_handlers import get_admin_schedule_handler
 from admin_report_handlers import (
@@ -71,6 +80,7 @@ import math
 import datetime
 import os
 import random
+import secrets
 import time
 import json
 import logging

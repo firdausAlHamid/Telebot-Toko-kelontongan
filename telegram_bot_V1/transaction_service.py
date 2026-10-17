@@ -6,9 +6,13 @@ Separated from Telegram handlers following Single Responsibility Principle.
 import logging
 from datetime import datetime, timedelta, date
 from sqlalchemy import func, desc, case, extract
-from database import SessionLocal, Transaction, TransactionItem, Product
+from database import SessionLocal, Transaction, TransactionItem, Product, StockMovement, QrisTransaction
 
 logger = logging.getLogger(__name__)
+
+VOID_STATUSES = ("voided", "void", "cancelled")
+QRIS_PAID_STATUSES = ("PAID", "SUCCESS")
+QRIS_DEAD_STATUSES = ("EXPIRED", "FAILED", "CANCELLED", "CANCEL")
 
 # --- Indonesian locale helpers ---
 
@@ -42,6 +46,188 @@ def format_date_indo(d):
     return f"{d.day} {BULAN_INDO[d.month]} {d.year}"
 
 
+def find_insufficient_stock(db, product_qty: dict):
+    """Return list of {product_id, name, need, stock} when qty exceeds available stock."""
+    missing = []
+    for pid, qty in product_qty.items():
+        prod = db.query(Product).filter(Product.id == pid).first()
+        stock = (prod.stock or 0) if prod else 0
+        name = prod.item_name if prod else f"Produk #{pid}"
+        if not prod or stock < qty:
+            missing.append({"product_id": pid, "name": name, "need": qty, "stock": stock})
+    return missing
+
+
+def format_stock_error(missing):
+    if not missing:
+        return "Stok tidak cukup."
+    lines = ["Stok tidak cukup:"]
+    for m in missing:
+        lines.append(f"- {m['name']}: butuh {m['need']}, sisa {m['stock']}")
+    return "\n".join(lines)
+
+
+def save_line_items(db, trx, calc_items):
+    """Persist cart calc items as TransactionItem rows."""
+    for item in calc_items:
+        db.add(TransactionItem(
+            transaction_id=trx.id,
+            product_id=item["product_id"],
+            product_name=item["item_name"],
+            unit_price=item["price"],
+            quantity=item["qty"],
+            discount_type=item.get("discount_type"),
+            discount_value=item.get("discount_value") or 0,
+            discount_amount=item.get("discount_amount") or 0,
+            subtotal=item.get("final_subtotal", item.get("subtotal", 0)),
+        ))
+
+
+def _has_open_stock_out(db, invoice_no):
+    """True if stock is currently deducted for this invoice (out after the last void)."""
+    last_void = (
+        db.query(StockMovement)
+        .filter(StockMovement.reference == f"VOID-{invoice_no}")
+        .order_by(StockMovement.id.desc())
+        .first()
+    )
+    out_q = db.query(StockMovement).filter(
+        StockMovement.movement_type == "out",
+        StockMovement.reference.in_([invoice_no, f"RESTORE-{invoice_no}"]),
+    )
+    if last_void:
+        out_q = out_q.filter(StockMovement.id > last_void.id)
+    return out_q.first() is not None
+
+
+def apply_sale_stock(db, trx, notes="Sale", created_by=None):
+    """Deduct stock for a sale. Idempotent if stock is already deducted after the last void."""
+    invoice_no = trx.invoice_no or f"INV-{trx.id:06d}"
+    if _has_open_stock_out(db, invoice_no):
+        return False
+
+    had_void = (
+        db.query(StockMovement)
+        .filter(StockMovement.reference == f"VOID-{invoice_no}")
+        .first()
+    )
+    ref = f"RESTORE-{invoice_no}" if had_void else invoice_no
+    items = db.query(TransactionItem).filter(TransactionItem.transaction_id == trx.id).all()
+    for it in items:
+        prod = db.query(Product).filter(Product.id == it.product_id).first()
+        if not prod:
+            continue
+        qty = it.quantity or 0
+        prod.stock = max(0, (prod.stock or 0) - qty)
+        db.add(StockMovement(
+            product_id=prod.id,
+            tenant_id=trx.tenant_id,
+            movement_type="out",
+            quantity=-qty,
+            reference=ref,
+            notes=notes,
+            created_by=created_by if created_by is not None else trx.user_id,
+        ))
+    return True
+
+
+def restore_sale_stock(db, trx, notes="Void", created_by=None):
+    """Return stock for a voided sale. No-op if stock was never deducted (e.g. unpaid QRIS)."""
+    invoice_no = trx.invoice_no or f"INV-{trx.id:06d}"
+    if not _has_open_stock_out(db, invoice_no):
+        return False
+
+    items = db.query(TransactionItem).filter(TransactionItem.transaction_id == trx.id).all()
+    for it in items:
+        prod = db.query(Product).filter(Product.id == it.product_id).first()
+        if not prod:
+            continue
+        qty = it.quantity or 0
+        prod.stock = (prod.stock or 0) + qty
+        db.add(StockMovement(
+            product_id=prod.id,
+            tenant_id=trx.tenant_id,
+            movement_type="in",
+            quantity=qty,
+            reference=f"VOID-{invoice_no}",
+            notes=notes,
+            created_by=created_by if created_by is not None else trx.user_id,
+        ))
+    return True
+
+
+def settle_qris_paid(order_id, paid_at=None):
+    """
+    Mark a QRIS order paid, complete the linked transaction, and deduct stock.
+    Idempotent. Returns a result dict.
+    """
+    db = SessionLocal()
+    try:
+        qris_trx = db.query(QrisTransaction).filter(QrisTransaction.order_id == order_id).first()
+        if not qris_trx:
+            return {"ok": False, "reason": "not_found"}
+
+        already = (qris_trx.status or "").upper() in QRIS_PAID_STATUSES
+        qris_trx.status = "PAID"
+        qris_trx.paid_at = paid_at or datetime.now().isoformat()
+
+        trx = None
+        if qris_trx.invoice_no:
+            trx = db.query(Transaction).filter(Transaction.invoice_no == qris_trx.invoice_no).first()
+            if trx and (trx.status or "") not in VOID_STATUSES:
+                trx.status = "completed"
+                apply_sale_stock(db, trx, notes="Sale (QRIS paid)", created_by=trx.user_id)
+
+        db.commit()
+        return {
+            "ok": True,
+            "already": already,
+            "trx_id": trx.id if trx else None,
+            "invoice_no": (trx.invoice_no if trx else qris_trx.invoice_no),
+            "grand_total": (trx.grand_total if trx else qris_trx.total_amount) or 0,
+            "user_id": trx.user_id if trx else None,
+        }
+    except Exception:
+        db.rollback()
+        logger.exception("Failed to settle QRIS order %s", order_id)
+        return {"ok": False, "reason": "error"}
+    finally:
+        db.close()
+
+
+def mark_qris_terminal(order_id, status="EXPIRED"):
+    """Expire/cancel an unpaid QRIS order without counting it as revenue."""
+    status = (status or "EXPIRED").upper()
+    db = SessionLocal()
+    try:
+        qris_trx = db.query(QrisTransaction).filter(QrisTransaction.order_id == order_id).first()
+        if not qris_trx:
+            return {"ok": False, "reason": "not_found"}
+        if (qris_trx.status or "").upper() in QRIS_PAID_STATUSES:
+            return {"ok": False, "reason": "already_paid"}
+
+        qris_trx.status = status
+        trx = None
+        if qris_trx.invoice_no:
+            trx = db.query(Transaction).filter(Transaction.invoice_no == qris_trx.invoice_no).first()
+            if trx and (trx.status or "") not in VOID_STATUSES:
+                if (trx.status or "") == "pending":
+                    restore_sale_stock(db, trx, notes=f"QRIS {status}", created_by=trx.user_id)
+                    trx.status = "cancelled"
+        db.commit()
+        return {
+            "ok": True,
+            "invoice_no": qris_trx.invoice_no,
+            "user_id": trx.user_id if trx else None,
+        }
+    except Exception:
+        db.rollback()
+        logger.exception("Failed to mark QRIS terminal %s", order_id)
+        return {"ok": False, "reason": "error"}
+    finally:
+        db.close()
+
+
 # =============================================================================
 # TRANSACTION HISTORY
 # =============================================================================
@@ -67,7 +253,10 @@ def get_transaction_history(user_id=None, limit=10, offset=0, status="completed"
         query = query.filter(Transaction.user_id == user_id)
 
     if status != "all":
-        query = query.filter(Transaction.status == status)
+        if status in VOID_STATUSES:
+            query = query.filter(Transaction.status.in_(VOID_STATUSES))
+        else:
+            query = query.filter(Transaction.status == status)
 
     if tenant_id:
         query = query.filter(Transaction.tenant_id == tenant_id)
@@ -156,8 +345,8 @@ def get_transaction_detail(transaction_id):
 
 def void_transaction(transaction_id, reason="Dibatalkan oleh admin", tenant_id=None):
     """
-    Void (soft-cancel) a transaction.
-    Only today's completed transactions can be voided.
+    Void (soft-cancel) a transaction and restore stock if it was deducted.
+    Only today's transactions can be voided.
 
     Returns:
         (success: bool, message: str)
@@ -173,7 +362,7 @@ def void_transaction(transaction_id, reason="Dibatalkan oleh admin", tenant_id=N
         db.close()
         return False, "Transaksi bukan dari toko ini."
 
-    if trx.status == "voided":
+    if (trx.status or "") in VOID_STATUSES:
         db.close()
         return False, "Transaksi ini sudah di-void sebelumnya."
 
@@ -183,15 +372,17 @@ def void_transaction(transaction_id, reason="Dibatalkan oleh admin", tenant_id=N
         db.close()
         return False, "Hanya transaksi hari ini yang bisa di-void."
 
+    restore_sale_stock(db, trx, notes=f"Void: {reason}", created_by=trx.user_id)
     trx.status = "voided"
     trx.voided_at = datetime.now()
     trx.void_reason = reason
 
+    invoice_no = trx.invoice_no or f"INV-{trx.id:06d}"
     db.commit()
     db.close()
 
     logger.info(f"Voided transaction #{transaction_id}: {reason}")
-    return True, f"Transaksi {trx.invoice_no or f'INV-{trx.id:06d}'} berhasil di-void."
+    return True, f"Transaksi {invoice_no} berhasil di-void."
 
 
 # =============================================================================
@@ -242,7 +433,7 @@ def get_daily_summary(target_date=None, tenant_id=None):
     v_query = db.query(Transaction).filter(
         Transaction.created_at >= start_dt,
         Transaction.created_at < end_dt,
-        Transaction.status == "voided"
+        Transaction.status.in_(VOID_STATUSES)
     )
     if tenant_id:
         v_query = v_query.filter(Transaction.tenant_id == tenant_id)
@@ -304,7 +495,7 @@ def get_period_summary(start_date, end_date, tenant_id=None):
     v_query = db.query(Transaction).filter(
         Transaction.created_at >= start_dt,
         Transaction.created_at < end_dt,
-        Transaction.status == "voided"
+        Transaction.status.in_(VOID_STATUSES)
     )
     if tenant_id:
         v_query = v_query.filter(Transaction.tenant_id == tenant_id)
