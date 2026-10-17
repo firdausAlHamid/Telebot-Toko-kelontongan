@@ -816,7 +816,7 @@ async def mini_catalog(tenant_id: int | None = None, category: str | None = None
     cat_query = db.query(Product.category).distinct().filter(base_cond)
     categories = [c[0] for c in cat_query.all() if c[0]]
 
-    # Products
+    # Products with sale counts for top-seller sorting
     prod_query = db.query(Product).filter(base_cond)
     if category and category != "Semua":
         prod_query = prod_query.filter(Product.category == category)
@@ -828,12 +828,28 @@ async def mini_catalog(tenant_id: int | None = None, category: str | None = None
 
     products = prod_query.order_by(Product.category, Product.item_name).all()
 
+    # Count sales per product for popularity sorting
+    today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    sales_count = db.query(
+        TransactionItem.product_id,
+        func.sum(TransactionItem.quantity).label("total_qty")
+    ).join(
+        Transaction, TransactionItem.transaction_id == Transaction.id
+    ).filter(
+        Transaction.tenant_id == tid,
+        Transaction.created_at >= today_start,
+        Transaction.status == "completed"
+    ).group_by(TransactionItem.product_id).all()
+
+    sales_map = {sc[0]: sc[1] or 0 for sc in sales_count}
+
     # Active Promotions
     today = datetime.now().date()
     promos = db.query(Promotion).filter(
         Promotion.is_active == True,
         Promotion.start_date <= today,
-        Promotion.end_date >= today
+        Promotion.end_date >= today,
+        Promotion.tenant_id == tid
     ).all()
     promo_map = {p.product_id: p for p in promos}
 
@@ -843,6 +859,7 @@ async def mini_catalog(tenant_id: int | None = None, category: str | None = None
         discount_amount = 0
         discount_label = ""
         discount_price = p.price
+        sales_today = sales_map.get(p.id, 0)
 
         if promo:
             if promo.discount_type == "percentage":
@@ -865,6 +882,7 @@ async def mini_catalog(tenant_id: int | None = None, category: str | None = None
             "has_promo": bool(promo),
             "discount_label": discount_label,
             "discount_price": discount_price if promo else p.price,
+            "sales_today": sales_today,  # NEW: untuk sorting top sellers
         })
 
     db.close()
@@ -1213,6 +1231,82 @@ async def klikqris_webhook(request: Request):
             logger.error(f"Failed to notify user about paid webhook: {e}")
 
     return {"status": True, "message": "Webhook processed successfully"}
+
+
+# ==============================================================================
+# SALES CHART & ANALYTICS ENDPOINTS
+# ==============================================================================
+
+@app.get("/api/mini/sales-chart")
+async def sales_chart_data(tenant_id: int | None = None, period: str = "today"):
+    """
+    Get sales data grouped by time periods for chart visualization.
+    Periods: today, 24h, 1week, 1month, 6month, 1year
+    """
+    db = SessionLocal()
+    tid = tenant_id or 1
+    now = datetime.now()
+
+    # Define time ranges based on period
+    ranges = {
+        "today": (now.replace(hour=0, minute=0, second=0, microsecond=0), now),
+        "24h": (now - timedelta(days=1), now),
+        "1week": (now - timedelta(days=7), now),
+        "1month": (now - timedelta(days=30), now),
+        "6month": (now - timedelta(days=180), now),
+        "1year": (now - timedelta(days=365), now),
+    }
+
+    start_date, end_date = ranges.get(period, ranges["today"])
+
+    # Query sales per day for the period
+    sales_data = db.query(
+        func.date(Transaction.created_at).label("date"),
+        func.sum(Transaction.grand_total).label("total_sales"),
+        func.count(Transaction.id).label("trx_count"),
+        func.sum(TransactionItem.quantity).label("total_qty")
+    ).join(
+        TransactionItem, Transaction.id == TransactionItem.transaction_id
+    ).filter(
+        Transaction.tenant_id == tid,
+        Transaction.status == "completed",
+        Transaction.created_at >= start_date,
+        Transaction.created_at <= end_date
+    ).group_by(func.date(Transaction.created_at)).order_by("date").all()
+
+    # Format chart data
+    chart_data = []
+    for row in sales_data:
+        date_obj = row[0]
+        if date_obj:
+            date_str = date_obj.strftime("%d %b" if period in ["1week", "1month", "6month", "1year"] else "%H:%M")
+        else:
+            date_str = "Unknown"
+
+        chart_data.append({
+            "date": date_str,
+            "sales": int(row[1] or 0),
+            "transactions": int(row[2] or 0),
+            "quantity": int(row[3] or 0)
+        })
+
+    # Calculate summary stats
+    total_sales = sum(d["sales"] for d in chart_data)
+    total_trx = sum(d["transactions"] for d in chart_data)
+    avg_sale = total_sales // total_trx if total_trx > 0 else 0
+
+    db.close()
+
+    return {
+        "period": period,
+        "chart_data": chart_data,
+        "summary": {
+            "total_sales": total_sales,
+            "total_transactions": total_trx,
+            "avg_per_trx": avg_sale,
+            "data_points": len(chart_data)
+        }
+    }
 
 
 # ==============================================================================

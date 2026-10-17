@@ -1,0 +1,236 @@
+<!-- === CHART PENJUALAN SALES TIMELINE (Snippet untuk Dashboard) === -->
+
+<style>
+  .sales-chart-container {
+    background: var(--surface-card);
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius-md);
+    padding: 16px;
+    margin: 12px 0;
+  }
+
+  .chart-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .chart-title {
+    font-size: 16px;
+    font-weight: 800;
+    color: var(--text-white);
+  }
+
+  .chart-period-buttons {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .period-btn {
+    padding: 6px 12px;
+    border-radius: var(--radius-full);
+    border: 1px solid var(--border-card);
+    background: transparent;
+    color: var(--text-sub);
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .period-btn.active {
+    background: var(--brand-green);
+    color: #000;
+    border-color: var(--brand-green);
+  }
+
+  .period-btn:active {
+    transform: scale(0.95);
+  }
+
+  .chart-canvas-wrapper {
+    position: relative;
+    height: 280px;
+    margin-bottom: 12px;
+  }
+
+  .chart-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 10px;
+  }
+
+  .stat-box {
+    background: rgba(34, 197, 94, 0.08);
+    border: 1px solid rgba(34, 197, 94, 0.2);
+    border-radius: var(--radius-md);
+    padding: 12px;
+    text-align: center;
+  }
+
+  .stat-label {
+    font-size: 11px;
+    color: var(--text-sub);
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  .stat-value {
+    font-size: 16px;
+    font-weight: 800;
+    color: var(--brand-green);
+  }
+</style>
+
+<div class="sales-chart-container" id="sales-chart-container">
+  <div class="chart-header">
+    <div class="chart-title">📊 Ringkasan Penjualan</div>
+    <div class="chart-period-buttons">
+      <button class="period-btn active" onclick="changeSalesPeriod('today')">Hari Ini</button>
+      <button class="period-btn" onclick="changeSalesPeriod('24h')">24 Jam</button>
+      <button class="period-btn" onclick="changeSalesPeriod('1week')">1 Minggu</button>
+      <button class="period-btn" onclick="changeSalesPeriod('1month')">1 Bulan</button>
+      <button class="period-btn" onclick="changeSalesPeriod('6month')">6 Bulan</button>
+      <button class="period-btn" onclick="changeSalesPeriod('1year')">1 Tahun</button>
+    </div>
+  </div>
+
+  <div class="chart-canvas-wrapper">
+    <canvas id="salesChart"></canvas>
+  </div>
+
+  <div class="chart-stats">
+    <div class="stat-box">
+      <div class="stat-label">💰 Total Penjualan</div>
+      <div class="stat-value" id="stat-total-sales">Rp0</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">📦 Transaksi</div>
+      <div class="stat-value" id="stat-total-trx">0</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">📊 Rata-rata</div>
+      <div class="stat-value" id="stat-avg-sale">Rp0</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">🎯 Total Unit</div>
+      <div class="stat-value" id="stat-total-qty">0</div>
+    </div>
+  </div>
+</div>
+
+<!-- === JAVASCRIPT untuk Chart ===  -->
+<script>
+  let currentChartInstance = null;
+  let activeSalesPeriod = 'today';
+
+  function formatRupiah(num) {
+    return 'Rp ' + Number(num || 0).toLocaleString('id-ID');
+  }
+
+  async function loadSalesChart(period) {
+    try {
+      const API_BASE = window.location.origin;
+      const tenantId = activeTenantId || 1; // Dari main context
+
+      const response = await fetch(`${API_BASE}/api/mini/sales-chart?tenant_id=${tenantId}&period=${period}`, {
+        headers: { 'ngrok-skip-browser-warning': 'true' }
+      });
+
+      if (!response.ok) throw new Error('Failed to fetch chart data');
+      const data = await response.json();
+
+      // Update stats
+      document.getElementById('stat-total-sales').textContent = formatRupiah(data.summary.total_sales);
+      document.getElementById('stat-total-trx').textContent = data.summary.total_transactions;
+      document.getElementById('stat-avg-sale').textContent = formatRupiah(data.summary.avg_per_trx);
+      document.getElementById('stat-total-qty').textContent = data.summary.total_qty || data.summary.data_points;
+
+      // Prepare chart data
+      const labels = data.chart_data.map(d => d.date);
+      const salesValues = data.chart_data.map(d => d.sales);
+
+      // Get canvas & destroy old chart if exists
+      const ctx = document.getElementById('salesChart');
+      if (!ctx) return;
+
+      if (currentChartInstance) currentChartInstance.destroy();
+
+      // Create new chart
+      currentChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: 'Total Penjualan (Rp)',
+              data: salesValues,
+              backgroundColor: 'rgba(34, 197, 94, 0.6)',
+              borderColor: '#22c55e',
+              borderWidth: 2,
+              borderRadius: 6,
+              fill: true,
+              tension: 0.4
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              labels: { color: '#94a3b8', font: { size: 12, weight: 700 } }
+            },
+            tooltip: {
+              backgroundColor: 'rgba(0,0,0,0.8)',
+              titleColor: '#fff',
+              bodyColor: '#fff',
+              borderColor: '#22c55e',
+              borderWidth: 1,
+              padding: 12,
+              displayColors: false,
+              callbacks: {
+                label: (ctx) => formatRupiah(ctx.parsed.y)
+              }
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: { color: '#64748b', font: { size: 11 } },
+              grid: { color: 'rgba(255,255,255,0.05)' }
+            },
+            x: {
+              ticks: { color: '#64748b', font: { size: 11 } },
+              grid: { display: false }
+            }
+          }
+        }
+      });
+    } catch (err) {
+      console.error('Chart load error:', err);
+    }
+  }
+
+  function changeSalesPeriod(period) {
+    activeSalesPeriod = period;
+
+    // Update button states
+    document.querySelectorAll('.period-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.textContent.toLowerCase().includes(period.replace(/[0-9]/g, '')) ||
+        (period === 'today' && btn.textContent.includes('Hari Ini')));
+    });
+
+    // Reload chart
+    loadSalesChart(period);
+  }
+
+  // Auto-load on init
+  document.addEventListener('DOMContentLoaded', () => {
+    loadSalesChart('today');
+  });
+</script>

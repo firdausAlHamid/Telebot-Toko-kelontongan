@@ -154,24 +154,90 @@ def get_cached_products_by_category(category, tenant_id=None, offset=0, limit=5)
     """Get products from cache filtered by category with pagination."""
     _refresh_cache_if_needed(tenant_id)
     products = _product_cache.get(tenant_id, {})
-    all_products = [p for p in products.values() if p["category"] == category]
+
+    # Special handling for "Semua" category - sort by sales today (top sellers first)
+    if category == "Semua":
+        db = SessionLocal()
+        today_start = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        sales_count = db.query(
+            TransactionItem.product_id,
+            func.sum(TransactionItem.quantity).label("total_qty")
+        ).join(
+            Transaction, TransactionItem.transaction_id == Transaction.id
+        ).filter(
+            Transaction.tenant_id == tenant_id,
+            Transaction.created_at >= today_start,
+            Transaction.status == "completed"
+        ).group_by(TransactionItem.product_id).all()
+
+        sales_map = {sc[0]: sc[1] or 0 for sc in sales_count}
+        db.close()
+
+        # Sort all products by sales today (descending), then by name
+        all_products = list(products.values())
+        all_products.sort(key=lambda p: (-sales_map.get(p["id"], 0), p["item_name"]))
+    else:
+        all_products = [p for p in products.values() if p["category"] == category]
+
     return all_products[offset:offset + limit], len(all_products)
 
 
 def get_cached_categories(tenant_id=None):
-    """Get distinct categories from cache."""
+    """Get distinct categories from cache, prepend 'Semua' at the top."""
     _refresh_cache_if_needed(tenant_id)
-    return _category_cache.get(tenant_id, [])
+    categories = _category_cache.get(tenant_id, [])
+    # Add "Semua" as first category if not already there
+    if "Semua" not in categories:
+        return ["Semua"] + categories
+    return categories
 
 
 def get_full_category_name(prefix, tenant_id=None):
     """Get full category name from prefix using cache."""
     _refresh_cache_if_needed(tenant_id)
     categories = _category_cache.get(tenant_id, [])
+    # Handle "Semua" special case
+    if prefix == "Semua" or prefix.lower() == "semua":
+        return "Semua"
     for cat in categories:
         if cat.startswith(prefix):
             return cat
     return prefix
+
+
+def get_top_seller_badge(product_id, tenant_id=None):
+    """Get badge emoji for top sellers (🥇🥈🥉 untuk top 3, 🔥 untuk sales > 10)."""
+    db = SessionLocal()
+    today_start = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # Get all sales today sorted by quantity
+    sales = db.query(
+        TransactionItem.product_id,
+        func.sum(TransactionItem.quantity).label("total_qty")
+    ).join(
+        Transaction, TransactionItem.transaction_id == Transaction.id
+    ).filter(
+        Transaction.tenant_id == tenant_id,
+        Transaction.created_at >= today_start,
+        Transaction.status == "completed"
+    ).group_by(TransactionItem.product_id).order_by(func.sum(TransactionItem.quantity).desc()).all()
+
+    db.close()
+
+    # Find ranking of this product
+    for idx, (pid, qty) in enumerate(sales):
+        if pid == product_id:
+            if idx == 0:
+                return "🥇"
+            elif idx == 1:
+                return "🥈"
+            elif idx == 2:
+                return "🥉"
+            elif qty and qty >= 10:
+                return "🔥"
+            break
+
+    return ""
 
 
 # =============================================================================
@@ -461,17 +527,20 @@ def build_products_keyboard(category_prefix, page=1, tenant_id=None, is_customer
 
     keyboard = []
 
-    # Product Rows
+    # Product Rows with badges
     for p in products:
         promo = promos.get(p["id"])
+        badge = get_top_seller_badge(p["id"], tenant_id)
+        badge_str = f" {badge}" if badge else ""
+
         if promo:
             if promo["discount_type"] == "percentage":
-                label = f"🏷️ Rp{p['price']:,} (-{promo['discount_value']}%) | {p['item_name']}"
+                label = f"🏷️ Rp{p['price']:,} (-{promo['discount_value']}%) | {p['item_name']}{badge_str}"
             else:
-                label = f"🏷️ Rp{p['price']:,} (-Rp{promo['discount_value']:,}) | {p['item_name']}"
+                label = f"🏷️ Rp{p['price']:,} (-Rp{promo['discount_value']:,}) | {p['item_name']}{badge_str}"
         else:
-            label = f"Rp{p['price']:,} | {p['item_name']}"
-            
+            label = f"Rp{p['price']:,} | {p['item_name']}{badge_str}"
+
         if is_customer:
             keyboard.append([InlineKeyboardButton(label, callback_data=f"cprod_{p['id']}")])
         else:
@@ -494,7 +563,7 @@ def build_products_keyboard(category_prefix, page=1, tenant_id=None, is_customer
     # Back to Categories Row
     cb_back = "cback_to_cat" if is_customer else "back_to_cat"
     keyboard.append([InlineKeyboardButton("🔙 Kembali ke Kategori", callback_data=cb_back)])
-    
+
     if not is_customer:
         keyboard.append([InlineKeyboardButton("✅ Selesai Memilih", callback_data="done_ordering")])
 
