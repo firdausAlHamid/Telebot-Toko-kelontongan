@@ -97,31 +97,39 @@ def invalidate_product_cache():
     _cache_timestamp = 0
 
 
-def get_cached_products_by_category(category, offset=0, limit=5, tenant_id=1):
+def get_cached_products_by_category(category, offset=0, limit=8, tenant_id=1):
     """Get products filtered by category and tenant_id with pagination."""
     db = SessionLocal()
-    query = db.query(Product).filter(
-        Product.category == category,
-        (Product.tenant_id == tenant_id) | (Product.tenant_id.is_(None))
-    )
-    total_products = query.count()
-    products = query.offset(offset).limit(limit).all()
-    db.close()
-    p_dicts = [
-        {"id": p.id, "item_name": p.item_name, "price": p.price, "category": p.category}
-        for p in products
-    ]
-    return p_dicts, total_products
+    try:
+        # FIX: Proper tenant_id filter - remove OR condition that causes issues
+        query = db.query(Product).filter(
+            Product.category == category,
+            Product.tenant_id == tenant_id
+        ).order_by(Product.item_name)
+
+        total_products = query.count()
+        products = query.offset(offset).limit(limit).all()
+
+        p_dicts = [
+            {"id": p.id, "item_name": p.item_name, "price": p.price, "category": p.category, "stock": p.stock}
+            for p in products
+        ]
+        return p_dicts, total_products
+    finally:
+        db.close()
 
 
 def get_cached_categories(tenant_id=1):
     """Get distinct categories from DB for a specific tenant."""
     db = SessionLocal()
-    categories = db.query(Product.category).filter(
-        (Product.tenant_id == tenant_id) | (Product.tenant_id.is_(None))
-    ).distinct().all()
-    db.close()
-    return categories
+    try:
+        # FIX: Proper tenant_id filter - show only tenant's categories
+        categories = db.query(Product.category).filter(
+            Product.tenant_id == tenant_id
+        ).distinct().order_by(Product.category).all()
+        return categories
+    finally:
+        db.close()
 
 
 
@@ -384,22 +392,32 @@ def build_categories_keyboard(tenant_id=1):
     """Build the inline keyboard for categories filtered by tenant_id."""
     categories = get_cached_categories(tenant_id=tenant_id)
 
+    if not categories:
+        # No categories found - return empty state
+        keyboard = [[InlineKeyboardButton("⚠️ Belum ada produk", callback_data="noop")]]
+        return InlineKeyboardMarkup(keyboard)
+
     keyboard = []
-    # Display 2 categories per row
+    # OPTIMIZED: Display 2 categories per row for faster selection
     row = []
     for cat in categories:
         cat_name = cat[0]
-        # Using a short callback data to avoid Telegram's 64 byte limit
-        cb_data = f"cat_{cat_name[:20]}"
-        row.append(InlineKeyboardButton(cat_name, callback_data=cb_data))
+        # Short callback data to avoid Telegram's 64 byte limit
+        # Use first 18 chars to ensure uniqueness while staying under limit
+        cb_data = f"cat_{cat_name[:18]}"
+
+        # Truncate long category names for display
+        display_name = cat_name if len(cat_name) <= 30 else cat_name[:27] + "..."
+        row.append(InlineKeyboardButton(display_name, callback_data=cb_data))
+
         if len(row) == 2:
             keyboard.append(row)
             row = []
     if row:
         keyboard.append(row)
 
-    keyboard.append([InlineKeyboardButton(
-        "✅ Selesai Memilih", callback_data="done_ordering")])
+    # Quick action buttons at bottom
+    keyboard.append([InlineKeyboardButton("✅ Selesai Memilih", callback_data="done_ordering")])
     return InlineKeyboardMarkup(keyboard)
 
 
@@ -407,52 +425,68 @@ def build_products_keyboard(category_prefix, page=1, tenant_id=1):
     """Build the inline keyboard for products in a category with pagination for a tenant."""
     category = get_full_category_name(category_prefix)
 
-    per_page = 5
+    # OPTIMIZED: Show 8 products per page (was 5) for fewer clicks
+    per_page = 8
     offset = (page - 1) * per_page
     products, total_products = get_cached_products_by_category(category, offset, per_page, tenant_id=tenant_id)
-    total_pages = math.ceil(total_products / per_page)
+    total_pages = math.ceil(total_products / per_page) if total_products > 0 else 1
 
+    if not products:
+        # No products in this category
+        keyboard = [
+            [InlineKeyboardButton("⚠️ Kategori kosong", callback_data="noop")],
+            [InlineKeyboardButton("🔙 Kembali ke Kategori", callback_data="back_to_cat")]
+        ]
+        return InlineKeyboardMarkup(keyboard), category
 
     product_ids = [p["id"] for p in products]
     promos = get_active_promos_for_products(product_ids)
 
     keyboard = []
 
-    # Product Rows
+    # OPTIMIZED UI: Compact product display with inline +/- buttons
     for p in products:
         promo = promos.get(p["id"])
+
+        # Show stock indicator
+        stock_icon = ""
+        if p.get("stock", 0) == 0:
+            stock_icon = "❌ "
+        elif p.get("stock", 0) <= 10:
+            stock_icon = "⚠️ "
+
+        # Build product label
         if promo:
             if promo["discount_type"] == "percentage":
-                label = f"🏷️ {p['item_name']} - Rp{p['price']:,} (-{promo['discount_value']}%)"
+                label = f"{stock_icon}🏷️ {p['item_name'][:35]} - Rp{p['price']:,} (-{promo['discount_value']}%)"
             else:
-                label = f"🏷️ {p['item_name']} - Rp{p['price']:,} (-Rp{promo['discount_value']:,})"
+                label = f"{stock_icon}🏷️ {p['item_name'][:35]} - Rp{p['price']:,} (-Rp{promo['discount_value']:,})"
         else:
-            label = f"{p['item_name']} - Rp{p['price']:,}"
-            
+            # Truncate long names
+            name_display = p['item_name'][:35] + "..." if len(p['item_name']) > 35 else p['item_name']
+            label = f"{stock_icon}{name_display} - Rp{p['price']:,}"
+
+        # OPTIMIZED: Product name as single row (non-clickable label)
         keyboard.append([InlineKeyboardButton(label, callback_data=f"noop")])
+
+        # OPTIMIZED: +/- buttons in ONE ROW for faster clicking
         keyboard.append([
-            InlineKeyboardButton(
-                "➖", callback_data=f"rem_{p['id']}_{category_prefix}_{page}"),
-            InlineKeyboardButton(
-                "➕ Tambah", callback_data=f"add_{p['id']}_{category_prefix}_{page}")
+            InlineKeyboardButton("➖", callback_data=f"rem_{p['id']}_{category_prefix}_{page}"),
+            InlineKeyboardButton("➕ Tambah", callback_data=f"add_{p['id']}_{category_prefix}_{page}")
         ])
 
-    # Pagination Row
+    # Pagination Row - only if needed
     nav_row = []
     if page > 1:
-        nav_row.append(InlineKeyboardButton(
-            "⬅️ Prev", callback_data=f"page_{category_prefix}_{page-1}"))
+        nav_row.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"page_{category_prefix}_{page-1}"))
     if page < total_pages:
-        nav_row.append(InlineKeyboardButton(
-            "Next ➡️", callback_data=f"page_{category_prefix}_{page+1}"))
+        nav_row.append(InlineKeyboardButton("Next ➡️", callback_data=f"page_{category_prefix}_{page+1}"))
     if nav_row:
         keyboard.append(nav_row)
 
-    # Back to Categories Row
-    keyboard.append([InlineKeyboardButton(
-        "🔙 Kembali ke Kategori", callback_data="back_to_cat")])
-    keyboard.append([InlineKeyboardButton(
-        "✅ Selesai Memilih", callback_data="done_ordering")])
+    # Quick action buttons
+    keyboard.append([InlineKeyboardButton("🔙 Kembali ke Kategori", callback_data="back_to_cat")])
+    keyboard.append([InlineKeyboardButton("✅ Selesai Memilih", callback_data="done_ordering")])
 
     return InlineKeyboardMarkup(keyboard), category
 
@@ -609,9 +643,11 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Handle "back to categories"
     if data in ("back_to_cat", "back_to_catalog"):
         await query.answer()
+        # FIX: Get tenant_id from user
+        tenant_id = get_tenant_id(user_id)
         text = build_cart_text_from_memory(
             context, "🏪 *Katalog Produk*\n\nSilakan pilih kategori:")
-        reply_markup = build_categories_keyboard()
+        reply_markup = build_categories_keyboard(tenant_id=tenant_id)
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
         return
 
@@ -619,8 +655,10 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data.startswith("cat_"):
         await query.answer()
         cat_prefix = data[4:]
+        # FIX: Get tenant_id from user
+        tenant_id = get_tenant_id(user_id)
         reply_markup, full_cat_name = build_products_keyboard(
-            cat_prefix, page=1)
+            cat_prefix, page=1, tenant_id=tenant_id)
         text = build_cart_text_from_memory(
             context, f"📦 *Kategori: {full_cat_name}*\n\nPilih produk:")
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
@@ -972,8 +1010,10 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parts = data.split("_")
         cat_prefix = parts[1]
         page = int(parts[2])
+        # FIX: Get tenant_id from user
+        tenant_id = get_tenant_id(user_id)
         reply_markup, full_cat_name = build_products_keyboard(
-            cat_prefix, page=page)
+            cat_prefix, page=page, tenant_id=tenant_id)
         text = build_cart_text_from_memory(
             context, f"📦 *Kategori: {full_cat_name}*\n\nPilih produk:")
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
@@ -994,8 +1034,10 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         product_name = _product_cache.get(product_id, {}).get("item_name", "")
         await query.answer(f"➕ {product_name}")
 
+        # FIX: Get tenant_id from user
+        tenant_id = get_tenant_id(user_id)
         reply_markup, full_cat_name = build_products_keyboard(
-            cat_prefix, page=page)
+            cat_prefix, page=page, tenant_id=tenant_id)
         text = build_cart_text_from_memory(
             context, f"📦 *Kategori: {full_cat_name}*\n\nPilih produk:")
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
@@ -1015,8 +1057,10 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         product_name = _product_cache.get(product_id, {}).get("item_name", "")
         await query.answer(f"➖ {product_name}")
 
+        # FIX: Get tenant_id from user
+        tenant_id = get_tenant_id(user_id)
         reply_markup, full_cat_name = build_products_keyboard(
-            cat_prefix, page=page)
+            cat_prefix, page=page, tenant_id=tenant_id)
         text = build_cart_text_from_memory(
             context, f"📦 *Kategori: {full_cat_name}*\n\nPilih produk:")
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
