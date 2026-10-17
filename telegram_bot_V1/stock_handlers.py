@@ -421,6 +421,29 @@ async def stock_view_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return STOCK_VIEW_CAT
 
 
+def _generate_stock_bar(stock: int, min_stock: int, max_width: int = 20) -> str:
+    """Generate horizontal bar chart for stock visualization."""
+    if stock == 0:
+        return "░" * max_width + " HABIS"
+
+    # Calculate bar width based on min_stock threshold
+    threshold = max(min_stock, 10)
+    percentage = min(stock / (threshold * 3), 1.0)  # 3x min_stock = 100%
+    filled = int(percentage * max_width)
+    empty = max_width - filled
+
+    # Color indicators
+    if stock <= min_stock:
+        icon = "🔴"  # Critical
+    elif stock <= min_stock * 2:
+        icon = "🟡"  # Warning
+    else:
+        icon = "🟢"  # Good
+
+    bar = "█" * filled + "░" * empty
+    return f"{bar} {icon} {stock}"
+
+
 async def stock_view_cat_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -449,17 +472,44 @@ async def stock_view_cat_select(update: Update, context: ContextTypes.DEFAULT_TY
     full_cat = category[0] if category else cat_short
     products = db.query(Product).filter(
         Product.category == full_cat
-    ).order_by(Product.item_name).all()
+    ).order_by(Product.stock.asc(), Product.item_name).all()  # Sort by stock asc
     db.close()
 
-    text = f"📋 *Stok — {full_cat}*\n\n"
-    for p in products:
-        consign = "🤝" if p.is_consignment else ""
-        low = "⚠️" if p.stock <= p.min_stock and p.min_stock > 0 else ""
-        text += f"▪️ {consign}{p.item_name}: *{p.stock}* {low}\n"
-
     if not products:
-        text += "_Tidak ada produk._"
+        text = f"📋 *Stok — {full_cat}*\n\n_Tidak ada produk._"
+    else:
+        # Build horizontal bar chart visualization
+        text = f"📋 *Stok — {full_cat}*\n"
+        text += f"Total: {len(products)} produk\n\n"
+
+        # Group by stock level for better readability
+        critical = [p for p in products if p.stock <= p.min_stock]
+        warning = [p for p in products if p.min_stock < p.stock <= p.min_stock * 2]
+        good = [p for p in products if p.stock > p.min_stock * 2]
+
+        if critical:
+            text += "🔴 *STOK KRITIS*\n"
+            for p in critical[:5]:  # Show top 5 critical
+                consign = "🤝 " if p.is_consignment else ""
+                bar = _generate_stock_bar(p.stock, p.min_stock, 15)
+                # Truncate long names
+                name = p.item_name[:25] + "..." if len(p.item_name) > 25 else p.item_name
+                text += f"{consign}`{name}`\n{bar}\n\n"
+            if len(critical) > 5:
+                text += f"_...dan {len(critical) - 5} produk lainnya_\n\n"
+
+        if warning:
+            text += "🟡 *PERLU RESTOCK*\n"
+            for p in warning[:3]:  # Show top 3 warnings
+                consign = "🤝 " if p.is_consignment else ""
+                bar = _generate_stock_bar(p.stock, p.min_stock, 15)
+                name = p.item_name[:25] + "..." if len(p.item_name) > 25 else p.item_name
+                text += f"{consign}`{name}`\n{bar}\n\n"
+            if len(warning) > 3:
+                text += f"_...dan {len(warning) - 3} produk lainnya_\n\n"
+
+        if good:
+            text += f"🟢 *STOK AMAN*: {len(good)} produk\n"
 
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("🔙 Pilih Kategori", callback_data="stk_view")],
@@ -481,19 +531,39 @@ async def stock_low_alert(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Products with stock <= min_stock (and min_stock > 0) OR stock == 0
     low_products = db.query(Product).filter(
         (Product.stock <= Product.min_stock) | (Product.stock == 0)
-    ).order_by(Product.category, Product.item_name).all()
+    ).order_by(Product.stock.asc(), Product.category, Product.item_name).all()
     db.close()
 
     if not low_products:
         text = "✅ *Stok Aman!*\n\nSemua produk memiliki stok yang cukup."
     else:
-        text = f"⚠️ *Stok Rendah / Habis* ({len(low_products)} produk)\n\n"
-        for p in low_products:
-            consign = "🤝" if p.is_consignment else ""
-            if p.stock == 0:
-                text += f"🔴 {consign}{p.item_name}: *HABIS*\n"
-            else:
-                text += f"🟡 {consign}{p.item_name}: *{p.stock}* (min: {p.min_stock})\n"
+        text = f"⚠️ *Stok Rendah / Habis*\n{len(low_products)} produk perlu perhatian\n\n"
+
+        # Separate by severity
+        habis = [p for p in low_products if p.stock == 0]
+        kritis = [p for p in low_products if p.stock > 0 and p.stock <= p.min_stock]
+
+        if habis:
+            text += f"🔴 *HABIS* ({len(habis)} produk)\n"
+            for p in habis[:10]:  # Max 10 items
+                consign = "🤝 " if p.is_consignment else ""
+                name = p.item_name[:30] + "..." if len(p.item_name) > 30 else p.item_name
+                cat_short = p.category[:15] if p.category else ""
+                bar = _generate_stock_bar(p.stock, p.min_stock, 15)
+                text += f"{consign}`{name}`\n_{cat_short}_\n{bar}\n\n"
+            if len(habis) > 10:
+                text += f"_...dan {len(habis) - 10} lainnya_\n\n"
+
+        if kritis:
+            text += f"🟡 *KRITIS* ({len(kritis)} produk)\n"
+            for p in kritis[:10]:
+                consign = "🤝 " if p.is_consignment else ""
+                name = p.item_name[:30] + "..." if len(p.item_name) > 30 else p.item_name
+                cat_short = p.category[:15] if p.category else ""
+                bar = _generate_stock_bar(p.stock, p.min_stock, 15)
+                text += f"{consign}`{name}`\n_{cat_short}_\n{bar} (min: {p.min_stock})\n\n"
+            if len(kritis) > 10:
+                text += f"_...dan {len(kritis) - 10} lainnya_\n\n"
 
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("🔙 Menu Stok", callback_data="stock_menu")],
