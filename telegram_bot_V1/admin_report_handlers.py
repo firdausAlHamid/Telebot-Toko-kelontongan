@@ -50,9 +50,12 @@ async def laporan_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     keyboard = [
         [InlineKeyboardButton("📊 Hari Ini", callback_data="rpt_today")],
+        [InlineKeyboardButton("📊 1 Hari Terakhir (24 Jam)", callback_data="rpt_last24h")],
         [InlineKeyboardButton("📊 Kemarin", callback_data="rpt_yesterday")],
-        [InlineKeyboardButton("📊 Minggu Ini", callback_data="rpt_week")],
-        [InlineKeyboardButton("📊 Bulan Ini", callback_data="rpt_month")],
+        [InlineKeyboardButton("📊 1 Minggu Terakhir", callback_data="rpt_week")],
+        [InlineKeyboardButton("📊 1 Bulan Terakhir", callback_data="rpt_month")],
+        [InlineKeyboardButton("📊 6 Bulan Terakhir", callback_data="rpt_6months")],
+        [InlineKeyboardButton("📊 1 Tahun Terakhir", callback_data="rpt_year")],
         [InlineKeyboardButton("🏆 Produk Terlaris (Hari Ini)", callback_data="rpt_top_today")],
         [InlineKeyboardButton("🏆 Produk Terlaris (Bulan Ini)", callback_data="rpt_top_month")],
     ]
@@ -81,10 +84,19 @@ async def handle_report_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return await laporan_command(update, context)
 
     today = date.today()
+    from datetime import datetime
 
     if data == "rpt_today":
         summary = get_daily_summary(today)
         title = f"📊 Laporan Hari Ini — {summary['date_str']}"
+        text = _build_summary_text(title, summary)
+
+    elif data == "rpt_last24h":
+        # Last 24 hours from now
+        end = today
+        start = today - timedelta(days=1)
+        summary = get_period_summary(start, end)
+        title = f"📊 Laporan 24 Jam Terakhir\n📅 {summary['start_date_str']} — {summary['end_date_str']}"
         text = _build_summary_text(title, summary)
 
     elif data == "rpt_yesterday":
@@ -94,15 +106,31 @@ async def handle_report_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
         text = _build_summary_text(title, summary)
 
     elif data == "rpt_week":
-        start = today - timedelta(days=today.weekday())  # Monday
+        # Last 7 days
+        start = today - timedelta(days=7)
         summary = get_period_summary(start, today)
-        title = f"📊 Laporan Minggu Ini\n📅 {summary['start_date_str']} — {summary['end_date_str']}"
+        title = f"📊 Laporan 1 Minggu Terakhir\n📅 {summary['start_date_str']} — {summary['end_date_str']}"
         text = _build_summary_text(title, summary)
 
     elif data == "rpt_month":
-        start = today.replace(day=1)
+        # Last 30 days
+        start = today - timedelta(days=30)
         summary = get_period_summary(start, today)
-        title = f"📊 Laporan Bulan Ini\n📅 {summary['start_date_str']} — {summary['end_date_str']}"
+        title = f"📊 Laporan 1 Bulan Terakhir\n📅 {summary['start_date_str']} — {summary['end_date_str']}"
+        text = _build_summary_text(title, summary)
+
+    elif data == "rpt_6months":
+        # Last 6 months
+        start = today - timedelta(days=180)
+        summary = get_period_summary(start, today)
+        title = f"📊 Laporan 6 Bulan Terakhir\n📅 {summary['start_date_str']} — {summary['end_date_str']}"
+        text = _build_summary_text(title, summary)
+
+    elif data == "rpt_year":
+        # Last 1 year
+        start = today - timedelta(days=365)
+        summary = get_period_summary(start, today)
+        title = f"📊 Laporan 1 Tahun Terakhir\n📅 {summary['start_date_str']} — {summary['end_date_str']}"
         text = _build_summary_text(title, summary)
 
     elif data == "rpt_top_today":

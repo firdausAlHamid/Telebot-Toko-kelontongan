@@ -101,6 +101,41 @@ def get_cached_products_by_category(category, offset=0, limit=8, tenant_id=1):
     """Get products filtered by category and tenant_id with pagination."""
     db = SessionLocal()
     try:
+        # OPTIMIZATION: Handle "SEMUA" category - show best sellers first
+        if category == "⭐ SEMUA" or category.startswith("⭐"):
+            # Get top selling products from transaction history
+            from sqlalchemy import func, desc
+            from database import TransactionItem
+
+            # Query to get products sorted by total quantity sold
+            query = db.query(
+                Product,
+                func.coalesce(func.sum(TransactionItem.quantity), 0).label('total_sold')
+            ).outerjoin(
+                TransactionItem, Product.id == TransactionItem.product_id
+            ).filter(
+                Product.tenant_id == tenant_id
+            ).group_by(Product.id).order_by(
+                desc('total_sold'),  # Most sold first
+                Product.item_name
+            )
+
+            total_products = query.count()
+            results = query.offset(offset).limit(limit).all()
+
+            p_dicts = [
+                {
+                    "id": p.id,
+                    "item_name": p.item_name,
+                    "price": p.price,
+                    "category": p.category,
+                    "stock": p.stock,
+                    "sold": total_sold  # Include sold count for display
+                }
+                for p, total_sold in results
+            ]
+            return p_dicts, total_products
+
         # FIX: Proper tenant_id filter - remove OR condition that causes issues
         query = db.query(Product).filter(
             Product.category == category,
@@ -127,7 +162,10 @@ def get_cached_categories(tenant_id=1):
         categories = db.query(Product.category).filter(
             Product.tenant_id == tenant_id
         ).distinct().order_by(Product.category).all()
-        return categories
+
+        # OPTIMIZATION: Add "SEMUA" (All) category at the beginning
+        all_category = [("⭐ SEMUA",)]
+        return all_category + categories
     finally:
         db.close()
 
@@ -423,7 +461,11 @@ def build_categories_keyboard(tenant_id=1):
 
 def build_products_keyboard(category_prefix, page=1, tenant_id=1):
     """Build the inline keyboard for products in a category with pagination for a tenant."""
-    category = get_full_category_name(category_prefix)
+    # Handle "SEMUA" category
+    if category_prefix.startswith("⭐"):
+        category = "⭐ SEMUA"
+    else:
+        category = get_full_category_name(category_prefix)
 
     # OPTIMIZED: Show 8 products per page (was 5) for fewer clicks
     per_page = 8
@@ -445,7 +487,7 @@ def build_products_keyboard(category_prefix, page=1, tenant_id=1):
     keyboard = []
 
     # OPTIMIZED UI: Compact product display with inline +/- buttons
-    for p in products:
+    for idx, p in enumerate(products):
         promo = promos.get(p["id"])
 
         # Show stock indicator
@@ -455,16 +497,29 @@ def build_products_keyboard(category_prefix, page=1, tenant_id=1):
         elif p.get("stock", 0) <= 10:
             stock_icon = "⚠️ "
 
+        # Show best seller badge for "SEMUA" category
+        bestseller_badge = ""
+        if category == "⭐ SEMUA" and p.get("sold", 0) > 0:
+            # Top 3 get special badges
+            if idx == 0:
+                bestseller_badge = "🥇 "
+            elif idx == 1:
+                bestseller_badge = "🥈 "
+            elif idx == 2:
+                bestseller_badge = "🥉 "
+            elif p.get("sold", 0) > 5:  # Sold more than 5 units
+                bestseller_badge = "🔥 "
+
         # Build product label
         if promo:
             if promo["discount_type"] == "percentage":
-                label = f"{stock_icon}🏷️ {p['item_name'][:35]} - Rp{p['price']:,} (-{promo['discount_value']}%)"
+                label = f"{bestseller_badge}{stock_icon}🏷️ {p['item_name'][:30]} - Rp{p['price']:,} (-{promo['discount_value']}%)"
             else:
-                label = f"{stock_icon}🏷️ {p['item_name'][:35]} - Rp{p['price']:,} (-Rp{promo['discount_value']:,})"
+                label = f"{bestseller_badge}{stock_icon}🏷️ {p['item_name'][:30]} - Rp{p['price']:,} (-Rp{promo['discount_value']:,})"
         else:
             # Truncate long names
-            name_display = p['item_name'][:35] + "..." if len(p['item_name']) > 35 else p['item_name']
-            label = f"{stock_icon}{name_display} - Rp{p['price']:,}"
+            name_display = p['item_name'][:30] + "..." if len(p['item_name']) > 30 else p['item_name']
+            label = f"{bestseller_badge}{stock_icon}{name_display} - Rp{p['price']:,}"
 
         # OPTIMIZED: Product name as single row (non-clickable label)
         keyboard.append([InlineKeyboardButton(label, callback_data=f"noop")])
