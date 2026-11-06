@@ -536,6 +536,22 @@
       border-color: var(--brand-green);
     }
 
+    .pos-prod-item.is-out-of-stock {
+      opacity: 0.72;
+      border-color: rgba(239, 68, 68, 0.3) !important;
+      background: rgba(239, 68, 68, 0.04) !important;
+    }
+
+    .pos-prod-item.is-out-of-stock:active {
+      transform: none !important;
+      border-color: rgba(239, 68, 68, 0.6) !important;
+    }
+
+    .pos-prod-stock.stock-empty {
+      color: #f87171 !important;
+      font-weight: 700;
+    }
+
     .pos-prod-img-box {
       width: 100%;
       aspect-ratio: 1 / 1;
@@ -2458,6 +2474,11 @@
 
     body.light-mode .pos-prod-item:active {
       border-color: var(--brand-green);
+    }
+
+    body.light-mode .pos-prod-item.is-out-of-stock {
+      background: #fef2f2 !important;
+      border-color: #fecaca !important;
     }
 
     body.light-mode .pos-prod-name {
@@ -4695,7 +4716,7 @@
         <option value="Obat & Mandi">Obat & Mandi</option>
       </select>
       <input type="number" id="m-prod-price" class="custom-input" placeholder="Harga Jual (Rp)" />
-      <input type="number" id="m-prod-stock" class="custom-input" placeholder="Stok Awal (misal: 100)" value="100" />
+      <input type="number" id="m-prod-stock" class="custom-input" min="0" placeholder="Stok Awal (misal: 10)" value="0" />
 
       <!-- Upload foto lokal -->
       <div style="margin-bottom:12px;">
@@ -5377,6 +5398,7 @@
     async function reloadAllData() {
       try {
         await Promise.allSettled([
+          loadDbCategories(),
           loadPosCatalog(),
           loadDashboardData(),
           loadRecentPosTransactions(),
@@ -6217,7 +6239,8 @@
       makeScrollableHorizontal(document.querySelector('.tabs-bar'));
       makeScrollableHorizontal(document.querySelector('.pos-cat-chips'));
 
-      // POS catalog is the primary cashier interface: load first
+      // Categories & POS catalog are primary: load first
+      try { await loadDbCategories(); } catch (e) { console.error('loadDbCategories failed:', e); }
       try { await loadPosCatalog(); } catch (e) { console.error('loadPosCatalog failed:', e); }
 
       // Safe background loads so no single background failure interrupts POS or UI
@@ -6269,14 +6292,9 @@
       });
     }
 
-    // ── Kategori POS Dinamis & Modal Kelola ──
-    const DEFAULT_CATEGORIES = [
-      { name: 'Sembako', icon: '' },
-      { name: 'Makanan', icon: '' },
-      { name: 'Minuman', icon: '' },
-      { name: 'Kebersihan', icon: '' },
-      { name: 'Obat & Mandi', icon: '' }
-    ];
+    // ── Kategori POS Dinamis (Database MySQL Terpusat per Tenant) ──
+    let currentDbCategories = [];
+    let currentEditingCatId = null;
 
     const AVAILABLE_ICONS = [
       '🚬', '🍚', '🍟', '🥤', '🧼',
@@ -6289,18 +6307,17 @@
       '📦', '🏷️', '✨', '🛒', '🏪'
     ];
 
-    let currentEditingCatIdx = null;
-
-    function getCustomCategories() {
+    async function loadDbCategories() {
       try {
-        const saved = localStorage.getItem('pos_custom_categories');
-        if (saved) return JSON.parse(saved);
-      } catch (e) { }
-      return DEFAULT_CATEGORIES;
-    }
-
-    function saveCustomCategories(cats) {
-      localStorage.setItem('pos_custom_categories', JSON.stringify(cats));
+        const res = await fetch(`${API_BASE}/api/mini/categories?tenant_id=${activeTenantId}`);
+        const data = await res.json();
+        currentDbCategories = data.categories || [];
+        renderCategoryChips();
+        renderCategoryManageList();
+        updateModalCategoryDropdowns();
+      } catch (err) {
+        console.error('Error load categories:', err);
+      }
     }
 
     function toggleIconPicker(type) {
@@ -6312,7 +6329,6 @@
         return;
       }
 
-      // Close the other picker if open
       const otherPicker = document.getElementById(type === 'new' ? 'edit-cat-icon-picker' : 'new-cat-icon-picker');
       if (otherPicker) otherPicker.style.display = 'none';
 
@@ -6355,7 +6371,7 @@
     function renderCategoryChips() {
       const container = document.getElementById('pos-cat-chips-bar');
       if (!container) return;
-      const cats = getCustomCategories();
+      const cats = currentDbCategories;
 
       // Ensure active category is valid
       if (activePosCat !== 'Semua' && !cats.some(c => c.name === activePosCat)) {
@@ -6371,20 +6387,47 @@
       cats.forEach(c => {
         const isActive = activePosCat === c.name ? 'active' : '';
         html += `
-          <button class="pos-cat-chip ${isActive}" data-cat="${c.name}" onclick="filterPosCat('${c.name}')">
-            ${c.name}
+          <button class="pos-cat-chip ${isActive}" data-cat="${escHtml(c.name)}" onclick="filterPosCat('${escHtml(c.name)}')">
+            ${escHtml(c.name)}
           </button>
         `;
       });
 
       container.innerHTML = html;
-      updateAddProdModalCategories(cats);
+      updateModalCategoryDropdowns();
     }
 
-    function updateAddProdModalCategories(cats) {
-      const select = document.getElementById('m-prod-cat');
-      if (!select) return;
-      select.innerHTML = cats.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
+    function updateModalCategoryDropdowns() {
+      const cats = currentDbCategories;
+      let catNames = cats.map(c => c.name);
+      if (!catNames.length) {
+        catNames = ['Sembako', 'Makanan', 'Minuman', 'Kebersihan', 'Obat & Mandi'];
+      }
+
+      // 1. Modal Tambah Produk
+      const selAdd = document.getElementById('m-prod-cat');
+      if (selAdd) {
+        const currVal = selAdd.value;
+        selAdd.innerHTML = catNames.map(c => `<option value="${escHtml(c)}">${escHtml(c)}</option>`).join('');
+        if (currVal && catNames.includes(currVal)) selAdd.value = currVal;
+      }
+
+      // 2. Modal Edit Produk
+      const selEdit = document.getElementById('edit-prod-cat');
+      if (selEdit) {
+        const currVal = selEdit.value;
+        selEdit.innerHTML = catNames.map(c => `<option value="${escHtml(c)}">${escHtml(c)}</option>`).join('');
+        if (currVal && catNames.includes(currVal)) selEdit.value = currVal;
+      }
+
+      // 3. Filter Kategori di Kelola Stok
+      const selVarC = document.getElementById('var-c-cat-filter');
+      if (selVarC) {
+        const currVal = selVarC.value || 'all';
+        selVarC.innerHTML = `<option value="all">Semua Kat.</option>` + 
+          catNames.map(c => `<option value="${escHtml(c)}">${escHtml(c)}</option>`).join('');
+        selVarC.value = currVal;
+      }
     }
 
     function openCategoryManageModal() {
@@ -6399,30 +6442,26 @@
     function renderCategoryManageList() {
       const container = document.getElementById('category-list-manage-items');
       if (!container) return;
-      const cats = getCustomCategories();
+      const cats = currentDbCategories;
 
       if (!cats.length) {
-        container.innerHTML = `<p style="font-size:12px; color:var(--text-dim); text-align:center; padding:10px 0;">Belum ada kategori.</p>`;
+        container.innerHTML = `<p style="font-size:12px; color:var(--text-dim); text-align:center; padding:10px 0;">Belum ada kategori di database.</p>`;
         return;
       }
 
-      container.innerHTML = cats.map((c, idx) => `
-        <div style="background:var(--surface2); border:1px solid var(--border-card); border-radius:10px; padding:7px 10px; margin-bottom:8px; display:flex; align-items:center; justify-content:space-between; gap:8px;">
-          <!-- Tombol Geser Atas / Bawah -->
-          <div style="display:flex; flex-direction:column; gap:2px; flex-shrink:0;">
-            <button type="button" class="cat-order-btn" title="Pindah ke Atas" onclick="moveCategoryItem(${idx}, -1)" ${idx === 0 ? 'disabled' : ''}>▲</button>
-            <button type="button" class="cat-order-btn" title="Pindah ke Bawah" onclick="moveCategoryItem(${idx}, 1)" ${idx === cats.length - 1 ? 'disabled' : ''}>▼</button>
-          </div>
-
+      container.innerHTML = cats.map(c => `
+        <div style="background:var(--surface2); border:1px solid var(--border-card); border-radius:10px; padding:8px 12px; margin-bottom:8px; display:flex; align-items:center; justify-content:space-between; gap:8px;">
           <div style="display:flex; align-items:center; gap:8px; flex-grow:1; min-width:0;">
-            <span style="font-size:13px; font-weight:700; color:#fff; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${c.name}</span>
+            <span style="font-size:16px;">${c.icon || '📦'}</span>
+            <span style="font-size:13px; font-weight:700; color:#fff; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escHtml(c.name)}</span>
+            <span style="font-size:10px; color:var(--text-dim); background:rgba(255,255,255,0.06); padding:2px 6px; border-radius:4px;">ID #${c.id}</span>
           </div>
 
           <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
-            <button type="button" style="background:rgba(255,255,255,0.08); border:1px solid var(--border-card); color:#cbd5e1; border-radius:6px; padding:5px 9px; font-size:11px; cursor:pointer;" onclick="openEditCategoryModal(${idx})">
+            <button type="button" style="background:rgba(255,255,255,0.08); border:1px solid var(--border-card); color:#cbd5e1; border-radius:6px; padding:5px 9px; font-size:11px; cursor:pointer;" onclick="openEditCategoryModal(${c.id})">
               Ubah
             </button>
-            <button type="button" style="background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.3); color:#f87171; border-radius:6px; padding:5px 9px; font-size:11px; cursor:pointer;" onclick="deleteCategoryItem(${idx})">
+            <button type="button" style="background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.3); color:#f87171; border-radius:6px; padding:5px 9px; font-size:11px; cursor:pointer;" onclick="deleteCategoryItem(${c.id}, '${escHtml(c.name)}')">
               Hapus
             </button>
           </div>
@@ -6430,55 +6469,51 @@
       `).join('');
     }
 
-    function moveCategoryItem(idx, delta) {
-      const cats = getCustomCategories();
-      const targetIdx = idx + delta;
-      if (targetIdx < 0 || targetIdx >= cats.length) return;
-
-      const item = cats.splice(idx, 1)[0];
-      cats.splice(targetIdx, 0, item);
-      saveCustomCategories(cats);
-
-      renderCategoryManageList();
-      renderCategoryChips();
-    }
-
-    function addNewCustomCategory() {
+    async function addNewCustomCategory() {
       const nameInput = document.getElementById('new-cat-name-input');
       const iconVal = document.getElementById('new-cat-icon-val');
       const name = nameInput?.value.trim();
-      const icon = iconVal?.value || '';
+      const icon = iconVal?.value || '📦';
 
       if (!name) return alert('Silakan masukkan nama kategori.');
 
-      const cats = getCustomCategories();
-      if (cats.some(c => c.name.toLowerCase() === name.toLowerCase())) {
-        return alert('Kategori dengan nama tersebut sudah ada.');
+      try {
+        const res = await fetch(`${API_BASE}/api/mini/categories`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tenant_id: activeTenantId,
+            name: name,
+            icon: icon
+          })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          if (nameInput) nameInput.value = '';
+          await loadDbCategories();
+          await loadPosCatalog();
+          alert(`✅ Kategori "${name}" berhasil disimpan ke database!`);
+        } else {
+          alert(data.detail || data.message || 'Gagal menambahkan kategori.');
+        }
+      } catch (err) {
+        alert('Terjadi kesalahan koneksi saat menyimpan kategori.');
       }
-
-      cats.push({ name, icon });
-      saveCustomCategories(cats);
-      nameInput.value = '';
-      renderCategoryManageList();
-      renderCategoryChips();
-      renderPosGrid();
     }
 
-    function openEditCategoryModal(idx) {
-      const cats = getCustomCategories();
-      if (!cats[idx]) return;
-
-      currentEditingCatIdx = idx;
-      const target = cats[idx];
+    function openEditCategoryModal(id) {
+      const cat = currentDbCategories.find(c => c.id === id);
+      if (!cat) return;
+      currentEditingCatId = id;
 
       const nameInput = document.getElementById('edit-cat-name-input');
       const iconBtn = document.getElementById('edit-cat-icon-btn');
       const iconVal = document.getElementById('edit-cat-icon-val');
       const picker = document.getElementById('edit-cat-icon-picker');
 
-      if (nameInput) nameInput.value = target.name;
-      if (iconBtn) iconBtn.textContent = target.icon || '📦';
-      if (iconVal) iconVal.value = target.icon || '📦';
+      if (nameInput) nameInput.value = cat.name;
+      if (iconBtn) iconBtn.textContent = cat.icon || '📦';
+      if (iconVal) iconVal.value = cat.icon || '📦';
       if (picker) picker.style.display = 'none';
 
       document.getElementById('edit-cat-modal').classList.add('active');
@@ -6488,60 +6523,59 @@
       document.getElementById('edit-cat-modal').classList.remove('active');
       const picker = document.getElementById('edit-cat-icon-picker');
       if (picker) picker.style.display = 'none';
-      currentEditingCatIdx = null;
+      currentEditingCatId = null;
     }
 
-    function saveEditedCategory() {
-      if (currentEditingCatIdx === null) return;
-      const cats = getCustomCategories();
-      if (!cats[currentEditingCatIdx]) return;
-
+    async function saveEditedCategory() {
+      if (currentEditingCatId === null) return;
       const nameInput = document.getElementById('edit-cat-name-input');
       const iconVal = document.getElementById('edit-cat-icon-val');
       const newName = nameInput?.value.trim();
-      const newIcon = iconVal?.value || '';
+      const newIcon = iconVal?.value || '📦';
 
       if (!newName) return alert('Nama kategori tidak boleh kosong.');
 
-      // Check duplicate against other items
-      if (cats.some((c, i) => i !== currentEditingCatIdx && c.name.toLowerCase() === newName.toLowerCase())) {
-        return alert('Kategori dengan nama tersebut sudah ada.');
+      try {
+        const res = await fetch(`${API_BASE}/api/mini/categories/${currentEditingCatId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tenant_id: activeTenantId,
+            name: newName,
+            icon: newIcon
+          })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          closeEditCategoryModal();
+          await loadDbCategories();
+          await loadPosCatalog();
+        } else {
+          alert(data.detail || data.message || 'Gagal memperbarui kategori.');
+        }
+      } catch (err) {
+        alert('Terjadi kesalahan koneksi saat memperbarui kategori.');
       }
-
-      const oldName = cats[currentEditingCatIdx].name;
-      cats[currentEditingCatIdx].name = newName;
-      cats[currentEditingCatIdx].icon = newIcon;
-      saveCustomCategories(cats);
-
-      // If activePosCat was the old name, update it
-      if (activePosCat === oldName) activePosCat = newName;
-
-      // Update products in current memory that matched oldName
-      allCatalogProducts.forEach(p => {
-        if (p.category === oldName) p.category = newName;
-      });
-
-      closeEditCategoryModal();
-      renderCategoryManageList();
-      renderCategoryChips();
-      renderPosGrid();
     }
 
-    function deleteCategoryItem(idx) {
-      const cats = getCustomCategories();
-      if (!cats[idx]) return;
-      const target = cats[idx];
+    async function deleteCategoryItem(id, name) {
+      if (!confirm(`Hapus kategori "${name}" dari database?\n(Produk dengan kategori ini akan dialihkan ke 'Lainnya')`)) return;
 
-      if (!confirm(`Hapus kategori "${target.name}"?`)) return;
-
-      cats.splice(idx, 1);
-      saveCustomCategories(cats);
-
-      if (activePosCat === target.name) activePosCat = 'Semua';
-
-      renderCategoryManageList();
-      renderCategoryChips();
-      renderPosGrid();
+      try {
+        const res = await fetch(`${API_BASE}/api/mini/categories/${id}?tenant_id=${activeTenantId}`, {
+          method: 'DELETE'
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          if (activePosCat === name) activePosCat = 'Semua';
+          await loadDbCategories();
+          await loadPosCatalog();
+        } else {
+          alert(data.detail || data.message || 'Gagal menghapus kategori.');
+        }
+      } catch (err) {
+        alert('Terjadi kesalahan koneksi saat menghapus kategori.');
+      }
     }
 
     // ── Load Master Catalog for POS ──
@@ -6550,17 +6584,6 @@
         const res = await fetch(`${API_BASE}/api/mini/catalog?tenant_id=${activeTenantId}`);
         const data = await res.json();
         allCatalogProducts = data.products || [];
-
-        // Check if there are any new categories in DB that aren't in custom categories list yet
-        const currentCats = getCustomCategories();
-        let changed = false;
-        allCatalogProducts.forEach(p => {
-          if (p.category && !currentCats.some(c => c.name === p.category)) {
-            currentCats.push({ name: p.category, icon: '📦' });
-            changed = true;
-          }
-        });
-        if (changed) saveCustomCategories(currentCats);
 
         renderCategoryChips();
         renderPosGrid();
@@ -6623,25 +6646,32 @@
         const placeholder = `<span class="prod-initial-avatar">${initial}</span>`;
         const imgBlock = isPosImageMode ? `
           <div class="pos-prod-img-box">
-            ${p.image_url ? `<img data-safe-src="${p.image_url}" alt="${p.item_name}" loading="lazy" onerror="this.outerHTML='<span class=\\'prod-initial-avatar\\'>${initial}</span>'" />` : placeholder}
-            
+            ${p.image_url ? `<img data-safe-src="${p.image_url}" alt="${escHtml(p.item_name)}" loading="lazy" onerror="this.outerHTML='<span class=\\'prod-initial-avatar\\'>${initial}</span>'" />` : placeholder}
           </div>
         ` : '';
 
+        const currentStock = (p.stock !== null && p.stock !== undefined) ? p.stock : 0;
+        const isOutOfStock = currentStock <= 0;
+
         return `
-          <div class="pos-prod-item" onclick="addPosItem(${p.id})">
+          <div class="pos-prod-item ${isOutOfStock ? 'is-out-of-stock' : ''}" onclick="${isOutOfStock ? `alertOutOfStock('${escHtml(p.item_name)}')` : `addPosItem(${p.id})`}">
             <div style="position:relative;">
               <button type="button" class="btn-card-edit" onclick="event.stopPropagation(); openEditProductModal(${p.id})" title="Edit Nama, Harga, Stok & Hapus">
                 <svg width="10.5" height="10.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                 <span>Edit</span>
               </button>
               ${imgBlock}
-              <div class="pos-prod-name" style="${!isPosImageMode ? 'padding-right:48px;' : ''}">${p.item_name}</div>
-              <div class="pos-prod-stock">Stok: ${p.stock ?? 100}</div>
+              <div class="pos-prod-name" style="${!isPosImageMode ? 'padding-right:48px;' : ''}">${escHtml(p.item_name)}</div>
+              <div class="pos-prod-stock ${isOutOfStock ? 'stock-empty' : ''}">
+                ${isOutOfStock ? '<span style="color:#f87171; font-weight:800;">⚠️ Stok Habis (0)</span>' : `Stok: ${currentStock}`}
+              </div>
             </div>
             <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">
               <div class="pos-prod-price" style="margin-top:0;">${fmtRp(p.price)}</div>
-              <div class="pos-prod-add-btn">+</div>
+              ${isOutOfStock 
+                ? `<div class="pos-prod-add-btn disabled" title="Stok Habis" style="background:rgba(239,68,68,0.15); color:#f87171; border:1px solid rgba(239,68,68,0.3); font-size:11px; cursor:not-allowed;">✕</div>`
+                : `<div class="pos-prod-add-btn">+</div>`
+              }
             </div>
           </div>
         `;
@@ -6655,10 +6685,26 @@
       }
     }
 
+    function alertOutOfStock(name) {
+      alert(`❌ Stok produk "${name}" sedang HABIS (0).\nSilakan lakukan restock di Kelola Stok sebelum menjual barang ini.`);
+    }
+
     // ── POS Cart Actions ──
     function addPosItem(id) {
       const prod = allCatalogProducts.find(p => p.id === id);
       if (!prod) return;
+
+      const available = (prod.stock !== null && prod.stock !== undefined) ? prod.stock : 0;
+      if (available <= 0) {
+        alert(`❌ Stok "${prod.item_name}" sedang HABIS (0).\nProduk tidak dapat ditambahkan ke keranjang.`);
+        return;
+      }
+
+      const currentInCart = posCart[id] ? posCart[id].qty : 0;
+      if (currentInCart + 1 > available) {
+        alert(`❌ Jumlah pembelian melebihi stok yang tersedia.\nStok "${prod.item_name}": ${available} pcs.`);
+        return;
+      }
 
       if (!posCart[id]) {
         posCart[id] = { prod, qty: 1 };
@@ -6670,6 +6716,14 @@
 
     function changePosQty(id, delta) {
       if (!posCart[id]) return;
+      if (delta > 0) {
+        const prod = posCart[id].prod;
+        const available = (prod.stock !== null && prod.stock !== undefined) ? prod.stock : 0;
+        if (posCart[id].qty + delta > available) {
+          alert(`❌ Jumlah "${prod.item_name}" tidak bisa ditambah lagi.\nMaksimal stok tersedia: ${available} pcs.`);
+          return;
+        }
+      }
       posCart[id].qty += delta;
       if (posCart[id].qty <= 0) delete posCart[id];
       renderPosCart();
@@ -6756,11 +6810,21 @@
       const items = Object.values(posCart);
       if (!items.length) return alert('Pilih produk terlebih dahulu.');
 
+      // Validasi ketat ketersediaan stok sebelum checkout
+      for (const { prod, qty } of items) {
+        const avail = (prod.stock !== null && prod.stock !== undefined) ? prod.stock : 0;
+        if (avail <= 0) {
+          return alert(`❌ Transaksi dibatalkan: Stok "${prod.item_name}" sedang HABIS (0).\nSilakan hapus produk ini dari keranjang.`);
+        }
+        if (qty > avail) {
+          return alert(`❌ Transaksi dibatalkan: Jumlah "${prod.item_name}" (${qty} pcs) melebihi stok yang tersedia (${avail} pcs).`);
+        }
+      }
+
       let total = 0;
       for (const { prod, qty } of items) total += prod.price * qty;
 
       const payload = {
-        tenant_id: 1,
         tenant_id: activeTenantId,
         items: items.map(({ prod, qty }) => ({ id: prod.id, name: prod.item_name, price: prod.price, quantity: qty })),
         payment_method: 'cash',
@@ -6793,7 +6857,7 @@
           alert(data.detail || data.message || 'Gagal menyimpan transaksi.');
         }
       } catch (err) {
-        alert('Terjadi kesalahan koneksi.');
+        alert('Terjadi kesalahan koneksi saat memproses checkout.');
       } finally {
         btn.disabled = false;
         btn.innerHTML = `<span>Konfirmasi</span>`;
@@ -7354,7 +7418,7 @@
       document.getElementById('edit-prod-id-badge').textContent = `ID #${prod.id}`;
       document.getElementById('edit-prod-name').value = prod.item_name || prod.name || '';
       document.getElementById('edit-prod-price').value = prod.price || 0;
-      document.getElementById('edit-prod-stock').value = prod.stock ?? 100;
+      document.getElementById('edit-prod-stock').value = (prod.stock !== null && prod.stock !== undefined) ? prod.stock : 0;
 
       const catSelect = document.getElementById('edit-prod-cat');
       if (catSelect && prod.category) {
@@ -7414,7 +7478,8 @@
       const name = document.getElementById('edit-prod-name').value.trim();
       const cat = document.getElementById('edit-prod-cat').value;
       const price = parseInt(document.getElementById('edit-prod-price').value) || 0;
-      const stock = parseInt(document.getElementById('edit-prod-stock').value) || 0;
+      const stockVal = document.getElementById('edit-prod-stock').value;
+      const stock = stockVal === '' ? 0 : Math.max(0, parseInt(stockVal) || 0);
 
       if (!name || price <= 0) {
         return alert('Nama produk dan harga wajib diisi.');
@@ -8386,7 +8451,8 @@
       const name = document.getElementById('m-prod-name').value.trim();
       const cat = document.getElementById('m-prod-cat').value;
       const price = parseInt(document.getElementById('m-prod-price').value) || 0;
-      const stock = parseInt(document.getElementById('m-prod-stock').value) || 100;
+      const stockVal = document.getElementById('m-prod-stock').value;
+      const stock = stockVal === '' ? 0 : Math.max(0, parseInt(stockVal) || 0);
 
       if (!name || price <= 0) return alert('Nama dan harga wajib diisi.');
 

@@ -82,6 +82,21 @@ class CartItem(Base):
     quantity = Column(Integer, default=1)
 
 
+class Category(Base):
+    """
+    Kategori produk toko per tenant.
+    Memungkinkan penambahan kategori bahkan saat belum ada produknya.
+    """
+    __tablename__ = "categories"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id  = Column(Integer, ForeignKey("tenants.id"), nullable=True, index=True)
+    name       = Column(String(100), nullable=False)
+    icon       = Column(String(20), nullable=True, default="📦")
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
 class Product(Base):
     __tablename__ = "products"
 

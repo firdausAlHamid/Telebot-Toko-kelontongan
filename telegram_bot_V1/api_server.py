@@ -32,7 +32,7 @@ import httpx
 from database import (
     SessionLocal, BotUser, Tenant, RegistrationToken, Transaction,
     Product, TransactionItem, StockMovement, Promotion, StoreSchedule,
-    QrisTransaction, SeasonalPeriod
+    QrisTransaction, SeasonalPeriod, Category
 )
 from sqlalchemy import func, desc
 from receipt_generator import generate_receipt_image
@@ -125,12 +125,18 @@ class CreateOrderRequest(BaseModel):
     telegram_user: dict | None = None
 
 
+class CategoryManageRequest(BaseModel):
+    tenant_id: int | None = None
+    name: str
+    icon: str | None = "📦"
+
+
 class ProductManageRequest(BaseModel):
     item_name: str
     category: str
     subcategory: str | None = None
     price: int
-    stock: int = 100
+    stock: int = 0
     image_url: str | None = None
     tenant_id: int | None = None
 
@@ -1641,9 +1647,19 @@ async def mini_catalog(tenant_id: int | None = None, category: str | None = None
     # Base filter for tenant
     base_cond = (Product.tenant_id == tid) if tid is not None else (Product.tenant_id == None)
 
-    # Categories
+    # Categories (ambil dari tabel Category database + distinct produk)
+    db_cats = db.query(Category).filter(
+        (Category.tenant_id == tid) if tid is not None else (Category.tenant_id == None)
+    ).order_by(Category.id).all()
+    categories = [c.name for c in db_cats]
+
     cat_query = db.query(Product.category).distinct().filter(base_cond)
-    categories = [c[0] for c in cat_query.all() if c[0]]
+    for c in cat_query.all():
+        if c[0] and c[0] not in categories:
+            categories.append(c[0])
+
+    if not categories:
+        categories = ["Sembako", "Makanan", "Minuman", "Kebersihan", "Obat & Mandi"]
 
     # Products with sale counts for top-seller sorting
     prod_query = db.query(Product).filter(base_cond)
@@ -1723,7 +1739,7 @@ async def mini_catalog(tenant_id: int | None = None, category: str | None = None
 
 
 def _resolve_sale_products(db, items, tenant_id):
-    """Load products from DB (not client prices) and reject oversell."""
+    """Load products from DB (not client prices) and strictly reject oversell / out-of-stock."""
     resolved = []
     for it in items:
         q = db.query(Product).filter(Product.id == it.id)
@@ -1735,6 +1751,17 @@ def _resolve_sale_products(db, items, tenant_id):
         qty = int(it.quantity or 0)
         if qty <= 0:
             raise HTTPException(status_code=400, detail=f"Jumlah tidak valid untuk {prod.item_name}")
+        curr_stock = prod.stock or 0
+        if curr_stock <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Stok produk '{prod.item_name}' sudah HABIS (0). Transaksi tidak dapat diproses."
+            )
+        if curr_stock < qty:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Stok '{prod.item_name}' tidak mencukupi (diminta: {qty}, sisa tersedia: {curr_stock})."
+            )
         resolved.append((prod, qty))
     missing = find_insufficient_stock(db, {p.id: qty for p, qty in resolved})
     if missing:
@@ -2502,16 +2529,30 @@ async def mini_create_product(req: ProductManageRequest):
         first_with_prod = db.query(Product.tenant_id).filter(Product.tenant_id != None).first()
         tid = first_with_prod[0] if first_with_prod else 2
 
+    clean_stock = max(0, min(int(req.stock or 0), 99999))
+    clean_price = max(0, int(req.price or 0))
+    clean_cat = (req.category or "Lainnya").strip()
+
+    # Pastikan kategori tersimpan di tabel categories database
+    if clean_cat:
+        cat_exists = db.query(Category).filter(
+            Category.tenant_id == tid,
+            func.lower(Category.name) == clean_cat.lower()
+        ).first()
+        if not cat_exists:
+            db.add(Category(tenant_id=tid, name=clean_cat, icon="📦"))
+            db.commit()
+
     max_id = db.query(func.max(Product.id)).scalar() or 0
     new_id = max_id + 1
 
     new_prod = Product(
         id=new_id,
-        category=req.category,
-        subcategory=req.subcategory or req.category,
-        item_name=req.item_name,
-        price=req.price,
-        stock=req.stock,
+        category=clean_cat,
+        subcategory=req.subcategory or clean_cat,
+        item_name=req.item_name.strip(),
+        price=clean_price,
+        stock=clean_stock,
         image_url=req.image_url,
         tenant_id=tid
     )
@@ -2543,12 +2584,27 @@ async def mini_update_product(product_id: int, req: ProductManageRequest):
         db.close()
         raise HTTPException(status_code=404, detail="Produk tidak ditemukan.")
 
-    prod.item_name = req.item_name
-    prod.category = req.category
+    clean_stock = max(0, min(int(req.stock or 0), 99999))
+    clean_price = max(0, int(req.price or 0))
+    clean_cat = (req.category or prod.category or "Lainnya").strip()
+
+    tid = prod.tenant_id or req.tenant_id or 2
+
+    # Pastikan kategori tersimpan di tabel categories database
+    if clean_cat:
+        cat_exists = db.query(Category).filter(
+            Category.tenant_id == tid,
+            func.lower(Category.name) == clean_cat.lower()
+        ).first()
+        if not cat_exists:
+            db.add(Category(tenant_id=tid, name=clean_cat, icon="📦"))
+
+    prod.item_name = req.item_name.strip()
+    prod.category = clean_cat
     if req.subcategory:
         prod.subcategory = req.subcategory
-    prod.price = req.price
-    prod.stock = req.stock
+    prod.price = clean_price
+    prod.stock = clean_stock
     if req.image_url == "" or req.image_url is None:
         if req.image_url == "":
             prod.image_url = None
@@ -2590,6 +2646,181 @@ async def mini_delete_product(product_id: int):
     return {
         "success": True,
         "message": f"Produk '{name}' berhasil dihapus!"
+    }
+
+
+# ==============================================================================
+# CATEGORY MANAGEMENT (Persist ke Database MySQL per Tenant)
+# ==============================================================================
+
+@app.get("/api/mini/categories")
+async def mini_get_categories(tenant_id: int | None = None):
+    """Ambil daftar kategori toko per tenant yang tersimpan di database MySQL."""
+    db = SessionLocal()
+    tid = tenant_id or 2
+
+    cats = db.query(Category).filter(
+        (Category.tenant_id == tid) | (Category.tenant_id == None)
+    ).order_by(Category.id).all()
+
+    # Jika database belum ada kategori untuk tenant ini, inisialisasi default categories
+    if not cats:
+        defaults = [
+            ("Sembako", "🍚"),
+            ("Makanan", "🍟"),
+            ("Minuman", "🥤"),
+            ("Kebersihan", "🧼"),
+            ("Obat & Mandi", "💊")
+        ]
+        cats = []
+        for name, icon in defaults:
+            c = Category(tenant_id=tid, name=name, icon=icon)
+            db.add(c)
+            cats.append(c)
+        db.commit()
+        for c in cats:
+            db.refresh(c)
+
+    # Pastikan kategori dari produk yang ada di DB juga terdaftar di tabel categories
+    existing_cat_names = {c.name.strip().lower(): c for c in cats}
+    prod_cats = db.query(Product.category).filter(
+        (Product.tenant_id == tid) | (Product.tenant_id == None)
+    ).distinct().all()
+
+    new_from_prods = False
+    for pc in prod_cats:
+        c_name = (pc[0] or "").strip()
+        if c_name and c_name.lower() not in existing_cat_names:
+            new_cat = Category(tenant_id=tid, name=c_name, icon="📦")
+            db.add(new_cat)
+            cats.append(new_cat)
+            existing_cat_names[c_name.lower()] = new_cat
+            new_from_prods = True
+    if new_from_prods:
+        db.commit()
+
+    results = [{"id": c.id, "name": c.name, "icon": c.icon or "📦"} for c in cats]
+    db.close()
+    return {"categories": results}
+
+
+@app.post("/api/mini/categories")
+async def mini_create_category(req: CategoryManageRequest):
+    """Tambah kategori baru ke database (meski belum ada produknya)."""
+    name = req.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Nama kategori tidak boleh kosong.")
+
+    db = SessionLocal()
+    tid = req.tenant_id or 2
+
+    # Cek duplikat per tenant
+    exists = db.query(Category).filter(
+        Category.tenant_id == tid,
+        func.lower(Category.name) == name.lower()
+    ).first()
+    if exists:
+        db.close()
+        raise HTTPException(status_code=400, detail=f"Kategori '{name}' sudah ada di database.")
+
+    new_cat = Category(
+        tenant_id=tid,
+        name=name,
+        icon=req.icon or "📦"
+    )
+    db.add(new_cat)
+    db.commit()
+    db.refresh(new_cat)
+    db.close()
+
+    return {
+        "success": True,
+        "message": f"Kategori '{name}' berhasil disimpan ke database!",
+        "category": {
+            "id": new_cat.id,
+            "name": new_cat.name,
+            "icon": new_cat.icon
+        }
+    }
+
+
+@app.put("/api/mini/categories/{category_id}")
+async def mini_update_category(category_id: int, req: CategoryManageRequest):
+    """Ubah nama/icon kategori di database dan sinkronisasi produk terkait."""
+    name = req.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Nama kategori tidak boleh kosong.")
+
+    db = SessionLocal()
+    cat = db.query(Category).filter(Category.id == category_id).first()
+    if not cat:
+        db.close()
+        raise HTTPException(status_code=404, detail="Kategori tidak ditemukan.")
+
+    old_name = cat.name
+    tid = cat.tenant_id or req.tenant_id or 2
+
+    # Cek duplikat jika nama berubah
+    if old_name.lower() != name.lower():
+        exists = db.query(Category).filter(
+            Category.tenant_id == tid,
+            Category.id != category_id,
+            func.lower(Category.name) == name.lower()
+        ).first()
+        if exists:
+            db.close()
+            raise HTTPException(status_code=400, detail=f"Kategori '{name}' sudah ada di database.")
+
+    cat.name = name
+    if req.icon:
+        cat.icon = req.icon
+
+    # Sinkronkan produk yang memakai kategori lama di tenant ini
+    db.query(Product).filter(
+        Product.tenant_id == tid,
+        Product.category == old_name
+    ).update({Product.category: name}, synchronize_session=False)
+
+    db.commit()
+    db.refresh(cat)
+    db.close()
+
+    return {
+        "success": True,
+        "message": f"Kategori berhasil diperbarui menjadi '{name}'!",
+        "category": {
+            "id": cat.id,
+            "name": cat.name,
+            "icon": cat.icon
+        }
+    }
+
+
+@app.delete("/api/mini/categories/{category_id}")
+async def mini_delete_category(category_id: int, tenant_id: int | None = None):
+    """Hapus kategori dari database."""
+    db = SessionLocal()
+    cat = db.query(Category).filter(Category.id == category_id).first()
+    if not cat:
+        db.close()
+        raise HTTPException(status_code=404, detail="Kategori tidak ditemukan.")
+
+    cat_name = cat.name
+    tid = cat.tenant_id or tenant_id or 2
+
+    # Set kategori produk yang menggunakan kategori ini menjadi 'Lainnya'
+    db.query(Product).filter(
+        Product.tenant_id == tid,
+        Product.category == cat_name
+    ).update({Product.category: "Lainnya"}, synchronize_session=False)
+
+    db.delete(cat)
+    db.commit()
+    db.close()
+
+    return {
+        "success": True,
+        "message": f"Kategori '{cat_name}' berhasil dihapus dari database."
     }
 
 
@@ -2688,6 +2919,13 @@ Kamu adalah asisten kasir toko kelontong Indonesia yang sangat teliti.
 Tolong baca dan analisa catatan kertas / tulisan tangan / faktur / bon barang masuk ini.
 Ekstrak setiap item barang yang ada ke dalam format JSON array murni.
 
+PENTING TENTANG STOK DAN HARGA (HINDARI ANOMALI):
+- JANGAN TERTUKAR antara Qty/Kuantitas/Stok barang dengan Harga Satuan atau Total Rupiah.
+  Contoh: 'Indomie 10 bks @ 3.500 = 35.000' -> stock: 10, price: 3500 (BUKAN stock: 35000).
+- Kuantitas fisik toko kelontong umumnya bernilai 1 s/d 200 pcs. Jika melihat angka di atas 1000 (misal: 3500, 15000), itu adalah HARGA dalam Rupiah, BUKAN stok!
+- stock: kuantitas/stok barang fisik dalam angka integer (default 10 jika tidak tertera di catatan).
+- price: harga satuan jual dalam rupiah integer bulat.
+
 Untuk setiap produk yang ditemukan, berikan field:
 - name: nama produk yang jelas dan rapi (misal: "Beras Rojolele 5kg", "Telur Ayam Negeri 1kg", "Indomie Goreng", "Sabun Lifebuoy")
 - category: pilih salah satu kategori yang paling cocok dari: "Sembako", "Makanan", "Minuman", "Kebersihan", "Obat & Mandi", atau "Lainnya"
@@ -2751,23 +2989,43 @@ async def mini_stock_save_batch(req: BatchProductRequest):
         clean_name = it.name.strip()
         if not clean_name:
             continue
+
+        clean_price = max(0, int(it.price or 0))
+        clean_stock = max(0, int(it.stock or 0))
+
+        # Pencegahan anomali stok: jika stok terisi angka ribuan dan harga kosong/0
+        if clean_stock >= 1000 and clean_price == 0:
+            clean_price = clean_stock
+            clean_stock = 10
+        elif clean_stock > 5000:
+            clean_stock = min(clean_stock, 9999)
+
+        cat_name = (it.category or "Sembako").strip()
+        if cat_name:
+            cat_exists = db.query(Category).filter(
+                Category.tenant_id == tid,
+                func.lower(Category.name) == cat_name.lower()
+            ).first()
+            if not cat_exists:
+                db.add(Category(tenant_id=tid, name=cat_name, icon="📦"))
+
         existing = db.query(Product).filter(
             Product.tenant_id == tid,
             Product.item_name.ilike(clean_name)
         ).first()
         if existing:
-            if it.price > 0:
-                existing.price = it.price
-            existing.stock = (existing.stock or 0) + it.stock
-            if it.category:
-                existing.category = it.category
+            if clean_price > 0:
+                existing.price = clean_price
+            existing.stock = min(99999, (existing.stock or 0) + clean_stock)
+            if cat_name:
+                existing.category = cat_name
             updated_count += 1
         else:
             new_p = Product(
                 item_name=clean_name,
-                category=it.category or "Sembako",
-                price=it.price,
-                stock=it.stock,
+                category=cat_name,
+                price=clean_price,
+                stock=clean_stock,
                 tenant_id=tid,
                 is_consignment=False
             )
@@ -2864,14 +3122,26 @@ async def mini_stock_import_excel(
     col_map = {}
     for col in df.columns:
         c_low = str(col).strip().lower()
-        if any(k in c_low for k in ["nama", "item", "produk", "product"]):
-            col_map["name"] = col
+        if any(k in c_low for k in ["nama barang", "nama produk", "nama item", "nama", "item", "produk", "product"]):
+            if "name" not in col_map:
+                col_map["name"] = col
         elif any(k in c_low for k in ["kategori", "category"]):
-            col_map["category"] = col
-        elif any(k in c_low for k in ["harga", "price", "jual"]):
-            col_map["price"] = col
-        elif any(k in c_low for k in ["stok", "stock", "qty", "jumlah"]):
-            col_map["stock"] = col
+            if "category" not in col_map:
+                col_map["category"] = col
+        elif any(k in c_low for k in ["harga jual", "harga satuan", "harga", "price", "unit price", "jual"]):
+            if "price" not in col_map:
+                col_map["price"] = col
+        elif any(k in c_low for k in ["stok fisik", "sisa stok", "stok", "stock", "kuantitas", "qty", "banyaknya"]):
+            if "stock" not in col_map:
+                col_map["stock"] = col
+
+    # Fallback stok jika kolom bernama 'jumlah' murni (bukan jumlah harga/rupiah/bayar)
+    if "stock" not in col_map:
+        for col in df.columns:
+            c_low = str(col).strip().lower()
+            if "jumlah" in c_low and not any(k in c_low for k in ["harga", "rp", "total", "bayar", "biaya"]):
+                col_map["stock"] = col
+                break
             
     if "name" not in col_map:
         raise HTTPException(status_code=400, detail="Kolom 'Nama Produk' tidak ditemukan dalam spreadsheet.")
@@ -2896,20 +3166,36 @@ async def mini_stock_import_excel(
             cat = str(row[col_map["category"]]).strip()
         if not cat or cat.lower() in ["nan", "none", "null", ""]:
             cat = _infer_smart_category(raw_name)
+
+        # Pastikan kategori tersimpan di database
+        if cat:
+            cat_exists = db.query(Category).filter(
+                Category.tenant_id == tid,
+                func.lower(Category.name) == cat.lower()
+            ).first()
+            if not cat_exists:
+                db.add(Category(tenant_id=tid, name=cat, icon="📦"))
             
         price = 0
         if "price" in col_map and pd.notna(row[col_map["price"]]):
             try:
-                price = int(float(row[col_map["price"]]))
+                price = max(0, int(float(row[col_map["price"]])))
             except Exception:
                 price = 0
                 
-        stock = 100
+        stock = 0
         if "stock" in col_map and pd.notna(row[col_map["stock"]]):
             try:
-                stock = int(float(row[col_map["stock"]]))
+                raw_stock = float(row[col_map["stock"]])
+                stock = max(0, int(raw_stock))
+                # Deteksi anomali: tertukar harga vs stok
+                if stock >= 1000 and price == 0:
+                    price = stock
+                    stock = 10
+                elif stock > 5000:
+                    stock = min(stock, 9999)
             except Exception:
-                stock = 100
+                stock = 0
                 
         if mode == "replace":
             new_p = Product(

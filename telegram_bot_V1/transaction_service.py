@@ -47,23 +47,26 @@ def format_date_indo(d):
 
 
 def find_insufficient_stock(db, product_qty: dict):
-    """Return list of {product_id, name, need, stock} when qty exceeds available stock."""
+    """Return list of {product_id, name, need, stock} when qty exceeds available stock or stock is depleted."""
     missing = []
     for pid, qty in product_qty.items():
         prod = db.query(Product).filter(Product.id == pid).first()
         stock = (prod.stock or 0) if prod else 0
         name = prod.item_name if prod else f"Produk #{pid}"
-        if not prod or stock < qty:
+        if not prod or stock <= 0 or stock < qty:
             missing.append({"product_id": pid, "name": name, "need": qty, "stock": stock})
     return missing
 
 
 def format_stock_error(missing):
     if not missing:
-        return "Stok tidak cukup."
-    lines = ["Stok tidak cukup:"]
+        return "Stok produk tidak mencukupi."
+    lines = ["Stok produk tidak mencukupi:"]
     for m in missing:
-        lines.append(f"- {m['name']}: butuh {m['need']}, sisa {m['stock']}")
+        if m['stock'] <= 0:
+            lines.append(f"- {m['name']}: STOK HABIS (0 pcs)")
+        else:
+            lines.append(f"- {m['name']}: butuh {m['need']} pcs, sisa {m['stock']} pcs")
     return "\n".join(lines)
 
 
