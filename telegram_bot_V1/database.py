@@ -77,7 +77,8 @@ class CartItem(Base):
     __tablename__ = "cart_items"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(BigInteger)
+    user_id = Column(BigInteger, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=True, index=True)
     product_id = Column(Integer)
     quantity = Column(Integer, default=1)
 
@@ -261,5 +262,19 @@ SessionLocal = sessionmaker(bind=engine)
 
 # Create the table schema if it doesn't exist yet
 Base.metadata.create_all(engine)
+
+# Auto-migration for schema upgrades
+def _run_migrations(eng):
+    try:
+        from sqlalchemy import text
+        with eng.connect() as conn:
+            res = conn.execute(text("SHOW COLUMNS FROM cart_items LIKE 'tenant_id'")).fetchone()
+            if not res:
+                conn.execute(text("ALTER TABLE cart_items ADD COLUMN tenant_id INT NULL, ADD INDEX idx_cart_tenant (tenant_id)"))
+                conn.commit()
+    except Exception:
+        pass
+
+_run_migrations(engine)
 
 # https://api.atria-asi.ai/v1

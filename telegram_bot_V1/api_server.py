@@ -23,7 +23,10 @@ from datetime import datetime, timedelta, date
 from typing import Optional, List, Dict, Any
 from urllib.parse import unquote, parse_qsl
 
-from fastapi import FastAPI, HTTPException, Header, Request, Response, UploadFile, File, Form
+from fastapi import (
+    FastAPI, HTTPException, Header, Request, Response,
+    UploadFile, File, Form, Depends, status
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -201,8 +204,31 @@ def validate_telegram_init_data(init_data: str) -> dict | None:
         return None
 
 
+class AuthUser:
+    """Represents an authenticated staff/owner or customer user."""
+    def __init__(self, telegram_id: int, role: str, tenant_id: int, full_name: str = ""):
+        self.telegram_id = telegram_id
+        self.role = role
+        self.tenant_id = tenant_id
+        self.full_name = full_name
+
+    def to_dict(self):
+        return {
+            "telegram_id": self.telegram_id,
+            "role": self.role,
+            "tenant_id": self.tenant_id,
+            "full_name": self.full_name,
+        }
+
+    def __getitem__(self, item):
+        return getattr(self, item)
+
+    def get(self, item, default=None):
+        return getattr(self, item, default)
+
+
 def get_user_from_init_data(init_data: str, request: Request = None):
-    """Parse initData, validate it, and look up the BotUser. Returns (tg_user_dict, BotUser or None)."""
+    """Parse initData, validate it, and look up the BotUser. Returns (tg_user_dict, BotUser)."""
     tg_user = None
     if init_data and "hash=" in init_data:
         try:
@@ -222,35 +248,131 @@ def get_user_from_init_data(init_data: str, request: Request = None):
 
     # Fallback for browser / ngrok testing (outside Telegram WebApp)
     if not user:
-        dev_role = "kasir"
+        dev_role = None
         if request:
-            dev_role = request.headers.get("X-Dev-Role") or request.query_params.get("role") or dev_role
-        if init_data:
+            dev_role = request.headers.get("X-Dev-Role") or request.query_params.get("role")
+        if not dev_role and init_data:
             if "role=owner" in init_data or "dev_role=owner" in init_data:
                 dev_role = "owner"
             elif "role=kasir" in init_data or "dev_role=kasir" in init_data:
                 dev_role = "kasir"
 
-        q = db.query(BotUser).filter(BotUser.is_active == True)
         if dev_role:
-            user = q.filter(BotUser.role == dev_role).first()
-        if not user:
-            # Fallback to any active staff (kasir or owner)
-            user = q.filter(BotUser.role.in_(["kasir", "owner"])).first()
+            q = db.query(BotUser).filter(BotUser.is_active == True, BotUser.role == dev_role)
+            user = q.first()
+            if not user:
+                user = db.query(BotUser).filter(BotUser.is_active == True, BotUser.role.in_(["kasir", "owner"])).first()
 
-        if user:
-            tg_user = {
-                "id": user.telegram_id,
-                "first_name": user.full_name or ("Kasir" if user.role == "kasir" else "Owner"),
-                "username": user.telegram_username or user.role
-            }
+            if user:
+                tg_user = {
+                    "id": user.telegram_id,
+                    "first_name": user.full_name or ("Kasir" if user.role == "kasir" else "Owner"),
+                    "username": user.telegram_username or user.role
+                }
 
     db.close()
 
     if not user:
-        raise HTTPException(status_code=401, detail="User belum terdaftar. Aktivasi token dulu di bot.")
+        raise HTTPException(status_code=401, detail="User belum terdaftar atau tidak memiliki akses.")
 
     return tg_user, user
+
+
+def get_current_user(request: Request) -> AuthUser:
+    """
+    FastAPI dependency that extracts and validates caller identity & role:
+    1. Cryptographic HMAC-SHA256 signature via Telegram Mini App initData (X-Telegram-Init-Data)
+    2. Server admin secret key via X-API-Secret or Authorization: Bearer
+    3. Explicit Dev Role header (X-Dev-Role) for local browser testing & automated tests
+
+    Raises HTTPException(401) if no valid credentials provided.
+    """
+    init_data = request.headers.get("X-Telegram-Init-Data") or request.query_params.get("init_data", "")
+    api_secret = request.headers.get("X-API-Secret")
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        bearer_token = auth_header[7:].strip()
+        if API_SECRET_KEY and bearer_token == API_SECRET_KEY:
+            api_secret = API_SECRET_KEY
+
+    # 1. API Secret / Admin Key Bypass
+    if API_SECRET_KEY and api_secret == API_SECRET_KEY:
+        req_tid = request.headers.get("X-Tenant-Id")
+        tenant_id = int(req_tid) if (req_tid and req_tid.isdigit()) else 2
+        return AuthUser(telegram_id=0, role="owner", tenant_id=tenant_id, full_name="Admin Server")
+
+    db = SessionLocal()
+    try:
+        # 2. Telegram WebApp cryptographic initData validation
+        if init_data and "hash=" in init_data:
+            tg_data = validate_telegram_init_data(init_data)
+            if not tg_data:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Signature Telegram initData tidak valid atau sudah kedaluwarsa."
+                )
+            tg_id = tg_data.get("id")
+            user = db.query(BotUser).filter(
+                BotUser.telegram_id == tg_id,
+                BotUser.is_active == True
+            ).first()
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="User Telegram belum terdaftar atau tidak aktif di sistem."
+                )
+            return AuthUser(
+                telegram_id=user.telegram_id,
+                role=user.role,
+                tenant_id=user.tenant_id or 2,
+                full_name=user.full_name or user.role
+            )
+
+        # 3. Development / Localhost browser testing (X-Dev-Role)
+        dev_role = request.headers.get("X-Dev-Role")
+        if not dev_role and "role" in request.query_params:
+            dev_role = request.query_params.get("role")
+        if not dev_role and init_data:
+            if "role=owner" in init_data or "dev_role=owner" in init_data:
+                dev_role = "owner"
+            elif "role=kasir" in init_data or "dev_role=kasir" in init_data:
+                dev_role = "kasir"
+
+        if dev_role in ("owner", "kasir"):
+            req_tenant_id = request.headers.get("X-Tenant-Id")
+            q = db.query(BotUser).filter(BotUser.is_active == True, BotUser.role == dev_role)
+            if req_tenant_id and req_tenant_id.isdigit():
+                q = q.filter(BotUser.tenant_id == int(req_tenant_id))
+            user = q.first()
+            if not user:
+                user = db.query(BotUser).filter(BotUser.is_active == True, BotUser.role == dev_role).first()
+            tenant_id = int(req_tenant_id) if (req_tenant_id and req_tenant_id.isdigit()) else (user.tenant_id if user else 2)
+            uid = user.telegram_id if user else (999999 if dev_role == "owner" else 888888)
+            name = user.full_name if user else f"Dev {dev_role.capitalize()}"
+            return AuthUser(telegram_id=uid, role=dev_role, tenant_id=tenant_id, full_name=name)
+
+        # Direct calls without credentials: reject unauthorized
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Autentikasi gagal: Kredensial tidak ditemukan. Harap sertakan autentikasi Telegram Mini App (X-Telegram-Init-Data) atau otorisasi peran."
+        )
+    finally:
+        db.close()
+
+
+def require_roles(allowed_roles: list[str]):
+    """
+    FastAPI dependency factory enforcing RBAC on endpoints.
+    Rejects with 403 Forbidden if user's role is not in allowed_roles.
+    """
+    def _role_checker(current_user: AuthUser = Depends(get_current_user)) -> AuthUser:
+        if current_user.role not in allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Akses ditolak: Operasi ini membutuhkan peran {allowed_roles}, namun peran Anda adalah '{current_user.role}'."
+            )
+        return current_user
+    return _role_checker
 
 
 # ==============================================================================
@@ -879,9 +1001,13 @@ async def list_seasons(request: Request):
 
 
 @app.post("/api/mini/seasons")
-async def create_season(req: SeasonCreateRequest, request: Request):
+async def create_season(
+    req: SeasonCreateRequest,
+    request: Request,
+    current_user: AuthUser = Depends(require_roles(["owner"]))
+):
     """Owner creates a new seasonal phase (active semester / holiday break)."""
-    tenant_id = _analytics_tenant(request)
+    tenant_id = _analytics_tenant(request) or current_user.tenant_id
     db = SessionLocal()
     try:
         try:
@@ -924,9 +1050,14 @@ async def create_season(req: SeasonCreateRequest, request: Request):
 
 
 @app.put("/api/mini/seasons/{season_id}")
-async def update_season(season_id: int, req: SeasonUpdateRequest, request: Request):
+async def update_season(
+    season_id: int,
+    req: SeasonUpdateRequest,
+    request: Request,
+    current_user: AuthUser = Depends(require_roles(["owner"]))
+):
     """Owner updates an existing academic season period."""
-    tenant_id = _analytics_tenant(request)
+    tenant_id = _analytics_tenant(request) or current_user.tenant_id
     db = SessionLocal()
     try:
         season = db.query(SeasonalPeriod).filter(
@@ -973,9 +1104,13 @@ async def update_season(season_id: int, req: SeasonUpdateRequest, request: Reque
 
 
 @app.delete("/api/mini/seasons/{season_id}")
-async def delete_season(season_id: int, request: Request):
+async def delete_season(
+    season_id: int,
+    request: Request,
+    current_user: AuthUser = Depends(require_roles(["owner"]))
+):
     """Owner deletes an academic season period."""
-    tenant_id = _analytics_tenant(request)
+    tenant_id = _analytics_tenant(request) or current_user.tenant_id
     db = SessionLocal()
     try:
         season = db.query(SeasonalPeriod).filter(
@@ -1306,14 +1441,8 @@ async def mini_kasir_list(request: Request):
 
 
 @app.post("/api/mini/generate-kasir-token")
-async def mini_generate_kasir_token(request: Request):
+async def mini_generate_kasir_token(request: Request, current_user: AuthUser = Depends(require_roles(["owner"]))):
     """Owner generates a new kasir invitation token."""
-    init_data = request.headers.get("X-Telegram-Init-Data", "")
-    tg_user, bot_user = get_user_from_init_data(init_data)
-
-    if not bot_user or bot_user.role != "owner":
-        raise HTTPException(status_code=403, detail="Hanya owner yang bisa generate token kasir.")
-
     db = SessionLocal()
     token_str = "POS-KASIR-" + secrets.token_hex(4).upper()
     expires = datetime.now() + timedelta(hours=48)
@@ -1321,15 +1450,15 @@ async def mini_generate_kasir_token(request: Request):
     new_token = RegistrationToken(
         token=token_str,
         role="kasir",
-        tenant_id=bot_user.tenant_id,
-        created_by=bot_user.telegram_id,
+        tenant_id=current_user.tenant_id,
+        created_by=current_user.telegram_id,
         expires_at=expires,
     )
     db.add(new_token)
     db.commit()
     db.close()
 
-    logger.info(f"Kasir token generated via MiniApp by owner={bot_user.telegram_id}: {token_str}")
+    logger.info(f"Kasir token generated via MiniApp by owner={current_user.telegram_id}: {token_str}")
 
     return {
         "success": True,
@@ -1376,18 +1505,12 @@ async def mini_transactions(request: Request, limit: int = 20, offset: int = 0):
 
 
 @app.delete("/api/mini/kasir/{telegram_id}")
-async def mini_deactivate_kasir(telegram_id: int, request: Request):
+async def mini_deactivate_kasir(telegram_id: int, request: Request, current_user: AuthUser = Depends(require_roles(["owner"]))):
     """Owner deactivates a kasir from their tenant."""
-    init_data = request.headers.get("X-Telegram-Init-Data", "")
-    tg_user, bot_user = get_user_from_init_data(init_data)
-
-    if not bot_user or bot_user.role != "owner":
-        raise HTTPException(status_code=403, detail="Hanya owner yang bisa nonaktifkan kasir.")
-
     db = SessionLocal()
     kasir = db.query(BotUser).filter(
         BotUser.telegram_id == telegram_id,
-        BotUser.tenant_id == bot_user.tenant_id,
+        BotUser.tenant_id == current_user.tenant_id,
         BotUser.role == "kasir",
     ).first()
 
@@ -1399,7 +1522,7 @@ async def mini_deactivate_kasir(telegram_id: int, request: Request):
     db.commit()
     db.close()
 
-    logger.info(f"Kasir {telegram_id} deactivated by owner={bot_user.telegram_id}")
+    logger.info(f"Kasir {telegram_id} deactivated by owner={current_user.telegram_id}")
     return {"success": True, "message": "Kasir berhasil dinonaktifkan."}
 
 
@@ -1561,10 +1684,10 @@ class StoreQrisRequest(BaseModel):
 
 
 @app.post("/api/mini/store-qris")
-async def mini_set_store_qris(req: StoreQrisRequest):
-    """Menyimpan atau mengubah foto QRIS toko milik tenant."""
+async def mini_set_store_qris(req: StoreQrisRequest, current_user: AuthUser = Depends(require_roles(["owner"]))):
+    """Menyimpan atau mengubah foto QRIS toko milik tenant (Khusus Owner)."""
     db = SessionLocal()
-    tid = req.tenant_id or 1
+    tid = req.tenant_id or current_user.tenant_id or 1
     tenant = db.query(Tenant).filter(Tenant.id == tid).first()
     if not tenant:
         # Fallback first tenant
@@ -1595,10 +1718,10 @@ class StoreScheduleRequest(BaseModel):
 
 
 @app.post("/api/mini/store-schedule")
-async def mini_set_store_schedule(req: StoreScheduleRequest):
-    """Atur status buka/tutup dan jam operasional toko (misal tutup saat lebaran / penjaga sakit)."""
+async def mini_set_store_schedule(req: StoreScheduleRequest, current_user: AuthUser = Depends(require_roles(["owner"]))):
+    """Atur status buka/tutup dan jam operasional toko (Khusus Owner)."""
     db = SessionLocal()
-    tid = req.tenant_id or 1
+    tid = req.tenant_id or current_user.tenant_id or 1
     today = datetime.now().date()
     end = today + timedelta(days=max(1, req.days_duration or 1))
 
@@ -2170,13 +2293,16 @@ async def sales_chart_data(tenant_id: int | None = None, period: str = "today"):
 # ==============================================================================
 
 @app.post("/api/pos/checkout")
-async def pos_direct_checkout(req: PosCheckoutRequest):
-    """Kasir melakukan transaksi penjualan langsung di toko secara cepat."""
+async def pos_direct_checkout(
+    req: PosCheckoutRequest,
+    current_user: AuthUser = Depends(require_roles(["owner", "kasir"]))
+):
+    """Kasir / Owner melakukan transaksi penjualan langsung di toko secara cepat."""
     if not req.items:
         raise HTTPException(status_code=400, detail="Keranjang belanja kosong.")
 
     db = SessionLocal()
-    tenant_id = req.tenant_id or 1
+    tenant_id = req.tenant_id or current_user.tenant_id or 1
     tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
     store_name = tenant.store_name if tenant else "Toko Ciamis"
 
@@ -2300,8 +2426,11 @@ async def pos_direct_checkout(req: PosCheckoutRequest):
 
 
 @app.post("/api/pos/transactions/{invoice_no}/void")
-async def pos_void_transaction(invoice_no: str):
-    """Membatalkan/meretur transaksi kasir untuk mengembalikan stok (mengatasi salah pencet kasir)."""
+async def pos_void_transaction(
+    invoice_no: str,
+    current_user: AuthUser = Depends(require_roles(["owner"]))
+):
+    """Membatalkan/meretur transaksi kasir untuk mengembalikan stok (Khusus Hak Akses Owner)."""
     db = SessionLocal()
     trx = db.query(Transaction).filter(Transaction.invoice_no == invoice_no).first()
     if not trx:
@@ -2315,11 +2444,11 @@ async def pos_void_transaction(invoice_no: str):
     restore_sale_stock(
         db, trx,
         notes="Pembatalan Transaksi Kasir (Salah Pencet / Retur)",
-        created_by=trx.user_id or 0,
+        created_by=current_user.telegram_id,
     )
     trx.status = "voided"
     trx.voided_at = datetime.now()
-    trx.void_reason = "Dibatalkan kasir POS"
+    trx.void_reason = f"Dibatalkan oleh owner ({current_user.full_name or current_user.telegram_id})"
     db.commit()
     db.close()
     return {
@@ -2329,8 +2458,11 @@ async def pos_void_transaction(invoice_no: str):
 
 
 @app.post("/api/pos/transactions/{invoice_no}/restore")
-async def pos_restore_transaction(invoice_no: str):
-    """Memulihkan transaksi yang sempat dibatalkan: status kembali lunas dan stok kembali terpotong (keambil)."""
+async def pos_restore_transaction(
+    invoice_no: str,
+    current_user: AuthUser = Depends(require_roles(["owner"]))
+):
+    """Memulihkan transaksi yang sempat dibatalkan: status kembali lunas dan stok kembali terpotong (Khusus Hak Akses Owner)."""
     db = SessionLocal()
     trx = db.query(Transaction).filter(Transaction.invoice_no == invoice_no).first()
     if not trx:
@@ -2344,7 +2476,7 @@ async def pos_restore_transaction(invoice_no: str):
     apply_sale_stock(
         db, trx,
         notes="Pemulihan Transaksi Kasir (Stok Kembali Keambil)",
-        created_by=trx.user_id or 0,
+        created_by=current_user.telegram_id,
     )
     trx.status = "completed"
     trx.voided_at = None
@@ -2416,15 +2548,39 @@ async def get_pos_online_orders(tenant_id: int | None = None, limit: int = 30):
 
 
 @app.put("/api/pos/orders/{trx_id}/status")
-async def update_pos_order_status(trx_id: int, req: OrderStatusUpdateRequest):
-    """Kasir memperbarui status pesanan online (misal: 'siap_diambil' atau 'completed')."""
+async def update_pos_order_status(
+    trx_id: int,
+    req: OrderStatusUpdateRequest,
+    current_user: AuthUser = Depends(require_roles(["owner", "kasir"]))
+):
+    """Kasir / Owner memperbarui status pesanan online (misal: 'siap_diambil', 'completed', atau 'cancelled')."""
     db = SessionLocal()
     trx = db.query(Transaction).filter(Transaction.id == trx_id).first()
     if not trx:
         db.close()
         raise HTTPException(status_code=404, detail="Pesanan tidak ditemukan.")
 
-    trx.status = req.status
+    old_status = (trx.status or "").lower()
+    new_status = (req.status or "").lower()
+
+    # Restorasi stok barang jika kasir membatalkan pesanan online (Bug Retur Stok Fix)
+    if new_status == "cancelled" and old_status != "cancelled":
+        restored = restore_sale_stock(
+            db, trx,
+            notes=f"Pembatalan Pesanan Online #{trx.id} oleh {current_user.role}",
+            created_by=current_user.telegram_id,
+        )
+        logger.info(f"Pesanan #{trx_id} dibatalkan oleh {current_user.telegram_id} ({current_user.role}). Stok diretur: {restored}")
+    elif old_status == "cancelled" and new_status != "cancelled":
+        # Jika kasir mengaktifkan kembali pesanan yang sebelumnya dibatalkan
+        applied = apply_sale_stock(
+            db, trx,
+            notes=f"Reaktivasi Pesanan Online #{trx.id} oleh {current_user.role}",
+            created_by=current_user.telegram_id,
+        )
+        logger.info(f"Pesanan #{trx_id} diaktifkan kembali oleh {current_user.telegram_id}. Stok dipotong ulang: {applied}")
+
+    trx.status = new_status
     db.commit()
 
     # Kirim notifikasi bot Telegram ke pembeli jika status berubah
@@ -2432,8 +2588,8 @@ async def update_pos_order_status(trx_id: int, req: OrderStatusUpdateRequest):
         "siap_diambil": "🛍️ *PESANAN ANDA SUDAH SIAP DIAMBIL!*\n\nSilakan datang ke toko kelontong untuk mengambil pesanan Anda.",
         "completed": "✅ *PESANAN SELESAI / LUNAS!*\n\nTerima kasih telah berbelanja di Toko Ciamis.",
         "diproses": "⏳ *PESANAN SEDANG DISIAPKAN* oleh kasir toko.",
-        "cancelled": "❌ *PESANAN DIBATALKAN* oleh pihak toko."
-    }.get(req.status, f"Status pesanan Anda kini: *{req.status}*")
+        "cancelled": "❌ *PESANAN DIBATALKAN* oleh pihak toko. Stok barang telah dikembalikan ke etalase toko."
+    }.get(new_status, f"Status pesanan Anda kini: *{new_status}*")
 
     if BOT_TOKEN and trx.user_id:
         try:
@@ -2450,7 +2606,7 @@ async def update_pos_order_status(trx_id: int, req: OrderStatusUpdateRequest):
             logger.error(f"Failed to notify user about order status: {e}")
 
     db.close()
-    return {"success": True, "message": f"Status pesanan berhasil diubah menjadi '{req.status}'"}
+    return {"success": True, "message": f"Status pesanan berhasil diubah menjadi '{new_status}'"}
 
 
 
@@ -2521,13 +2677,13 @@ async def mini_user_role(request: Request, user_id: int | None = None, role: str
 
 
 @app.post("/api/mini/product")
-async def mini_create_product(req: ProductManageRequest):
+async def mini_create_product(
+    req: ProductManageRequest,
+    current_user: AuthUser = Depends(require_roles(["owner", "kasir"]))
+):
     """Add a new product to store catalog (Owner & Kasir)."""
     db = SessionLocal()
-    tid = req.tenant_id
-    if not tid:
-        first_with_prod = db.query(Product.tenant_id).filter(Product.tenant_id != None).first()
-        tid = first_with_prod[0] if first_with_prod else 2
+    tid = req.tenant_id or current_user.tenant_id or 2
 
     clean_stock = max(0, min(int(req.stock or 0), 99999))
     clean_price = max(0, int(req.price or 0))
@@ -2576,7 +2732,11 @@ async def mini_create_product(req: ProductManageRequest):
 
 
 @app.put("/api/mini/product/{product_id}")
-async def mini_update_product(product_id: int, req: ProductManageRequest):
+async def mini_update_product(
+    product_id: int,
+    req: ProductManageRequest,
+    current_user: AuthUser = Depends(require_roles(["owner", "kasir"]))
+):
     """Update an existing product (Owner & Kasir)."""
     db = SessionLocal()
     prod = db.query(Product).filter(Product.id == product_id).first()
@@ -2588,7 +2748,7 @@ async def mini_update_product(product_id: int, req: ProductManageRequest):
     clean_price = max(0, int(req.price or 0))
     clean_cat = (req.category or prod.category or "Lainnya").strip()
 
-    tid = prod.tenant_id or req.tenant_id or 2
+    tid = prod.tenant_id or req.tenant_id or current_user.tenant_id or 2
 
     # Pastikan kategori tersimpan di tabel categories database
     if clean_cat:
@@ -2630,8 +2790,11 @@ async def mini_update_product(product_id: int, req: ProductManageRequest):
 
 
 @app.delete("/api/mini/product/{product_id}")
-async def mini_delete_product(product_id: int):
-    """Delete a product from store catalog (Owner & Kasir)."""
+async def mini_delete_product(
+    product_id: int,
+    current_user: AuthUser = Depends(require_roles(["owner"]))
+):
+    """Delete a product from store catalog (Khusus Owner)."""
     db = SessionLocal()
     prod = db.query(Product).filter(Product.id == product_id).first()
     if not prod:
@@ -2705,14 +2868,17 @@ async def mini_get_categories(tenant_id: int | None = None):
 
 
 @app.post("/api/mini/categories")
-async def mini_create_category(req: CategoryManageRequest):
+async def mini_create_category(
+    req: CategoryManageRequest,
+    current_user: AuthUser = Depends(require_roles(["owner", "kasir"]))
+):
     """Tambah kategori baru ke database (meski belum ada produknya)."""
     name = req.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="Nama kategori tidak boleh kosong.")
 
     db = SessionLocal()
-    tid = req.tenant_id or 2
+    tid = req.tenant_id or current_user.tenant_id or 2
 
     # Cek duplikat per tenant
     exists = db.query(Category).filter(
@@ -2745,7 +2911,11 @@ async def mini_create_category(req: CategoryManageRequest):
 
 
 @app.put("/api/mini/categories/{category_id}")
-async def mini_update_category(category_id: int, req: CategoryManageRequest):
+async def mini_update_category(
+    category_id: int,
+    req: CategoryManageRequest,
+    current_user: AuthUser = Depends(require_roles(["owner", "kasir"]))
+):
     """Ubah nama/icon kategori di database dan sinkronisasi produk terkait."""
     name = req.name.strip()
     if not name:
@@ -2758,7 +2928,7 @@ async def mini_update_category(category_id: int, req: CategoryManageRequest):
         raise HTTPException(status_code=404, detail="Kategori tidak ditemukan.")
 
     old_name = cat.name
-    tid = cat.tenant_id or req.tenant_id or 2
+    tid = cat.tenant_id or req.tenant_id or current_user.tenant_id or 2
 
     # Cek duplikat jika nama berubah
     if old_name.lower() != name.lower():
@@ -2797,8 +2967,12 @@ async def mini_update_category(category_id: int, req: CategoryManageRequest):
 
 
 @app.delete("/api/mini/categories/{category_id}")
-async def mini_delete_category(category_id: int, tenant_id: int | None = None):
-    """Hapus kategori dari database."""
+async def mini_delete_category(
+    category_id: int,
+    tenant_id: int | None = None,
+    current_user: AuthUser = Depends(require_roles(["owner"]))
+):
+    """Hapus kategori dari database (Khusus Owner)."""
     db = SessionLocal()
     cat = db.query(Category).filter(Category.id == category_id).first()
     if not cat:
@@ -2827,7 +3001,8 @@ async def mini_delete_category(category_id: int, tenant_id: int | None = None):
 @app.post("/api/mini/upload-image")
 async def mini_upload_image(
     file: UploadFile = File(...),
-    product_id: int | None = Form(None)
+    product_id: int | None = Form(None),
+    current_user: AuthUser = Depends(require_roles(["owner", "kasir"]))
 ):
     """
     Upload an image file directly from local storage/device.
@@ -2905,7 +3080,10 @@ class BatchProductRequest(BaseModel):
 
 
 @app.post("/api/mini/stock/ocr-photo")
-async def mini_stock_ocr_photo(file: UploadFile = File(...)):
+async def mini_stock_ocr_photo(
+    file: UploadFile = File(...),
+    current_user: AuthUser = Depends(require_roles(["owner", "kasir"]))
+):
     """Membaca catatan stok / bon / tulisan tangan di kertas menggunakan AI Vision."""
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File harus berupa gambar (JPG, PNG, dll).")
@@ -2978,10 +3156,13 @@ Jangan tambahkan teks pembuka atau markdown lain, hanya JSON array.
 
 
 @app.post("/api/mini/stock/save-batch")
-async def mini_stock_save_batch(req: BatchProductRequest):
+async def mini_stock_save_batch(
+    req: BatchProductRequest,
+    current_user: AuthUser = Depends(require_roles(["owner", "kasir"]))
+):
     """Menyimpan banyak produk sekaligus ke database hasil OCR atau input massal."""
     db = SessionLocal()
-    tid = req.tenant_id or 1
+    tid = req.tenant_id or current_user.tenant_id or 1
     added_count = 0
     updated_count = 0
     
@@ -3105,7 +3286,8 @@ def _infer_smart_category(name: str) -> str:
 async def mini_stock_import_excel(
     file: UploadFile = File(...),
     mode: str = Form("update"),  # "update" or "replace"
-    tenant_id: int = Form(1)
+    tenant_id: int = Form(1),
+    current_user: AuthUser = Depends(require_roles(["owner", "kasir"]))
 ):
     """Import spreadsheet (.xlsx / .csv) dengan opsi Update / Tambah atau Timpa Keseluruhan."""
     contents = await file.read()

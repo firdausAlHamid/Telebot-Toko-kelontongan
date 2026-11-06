@@ -286,30 +286,40 @@ def memory_cart_to_summary(context, tenant_id=None):
     return items
 
 
-def sync_memory_cart_to_db(user_id, context):
-    """Write in-memory cart to database (called at checkout)."""
+def sync_memory_cart_to_db(user_id, context, tenant_id=None):
+    """Write in-memory cart to database scoped to tenant."""
+    if tenant_id is None:
+        tenant_id = get_tenant_id(user_id)
     cart = get_memory_cart(context)
     db = SessionLocal()
-    # Clear old cart items
-    db.query(CartItem).filter(CartItem.user_id == user_id).delete()
-    # Insert new
+    # Clear old cart items for this user and tenant
+    q = db.query(CartItem).filter(CartItem.user_id == user_id)
+    if tenant_id is not None:
+        q = q.filter(CartItem.tenant_id == tenant_id)
+    q.delete(synchronize_session=False)
+    # Insert new with tenant_id
     for product_id, qty in cart.items():
         if qty > 0:
             for _ in range(qty):
-                db.add(CartItem(user_id=user_id, product_id=product_id))
+                db.add(CartItem(user_id=user_id, tenant_id=tenant_id, product_id=product_id))
     db.commit()
     db.close()
 
 
-def load_db_cart_to_memory(user_id, context):
-    """Load cart from DB into memory (called on first interaction)."""
+def load_db_cart_to_memory(user_id, context, tenant_id=None):
+    """Load cart from DB into memory scoped to tenant."""
+    if tenant_id is None:
+        tenant_id = get_tenant_id(user_id)
     db = SessionLocal()
-    items = db.query(
+    q = db.query(
         CartItem.product_id,
         func.count(CartItem.id).label("qty")
     ).filter(
         CartItem.user_id == user_id
-    ).group_by(CartItem.product_id).all()
+    )
+    if tenant_id is not None:
+        q = q.filter(CartItem.tenant_id == tenant_id)
+    items = q.group_by(CartItem.product_id).all()
     db.close()
 
     cart = {}
@@ -320,10 +330,10 @@ def load_db_cart_to_memory(user_id, context):
     context.user_data["cart_loaded"] = True
 
 
-def ensure_cart_loaded(user_id, context):
+def ensure_cart_loaded(user_id, context, tenant_id=None):
     """Make sure the in-memory cart is loaded from DB (first time only)."""
     if not context.user_data.get("cart_loaded"):
-        load_db_cart_to_memory(user_id, context)
+        load_db_cart_to_memory(user_id, context, tenant_id)
 
 
 # =============================================================================
@@ -331,9 +341,11 @@ def ensure_cart_loaded(user_id, context):
 # =============================================================================
 
 def get_cart_summary(user_id, tenant_id=None):
-    """Get cart items joined with products for a user (DB version for checkout)."""
+    """Get cart items joined with products for a user scoped to tenant."""
+    if tenant_id is None:
+        tenant_id = get_tenant_id(user_id)
     db = SessionLocal()
-    items = db.query(
+    q = db.query(
         Product.id,
         Product.item_name,
         Product.price,
@@ -342,8 +354,10 @@ def get_cart_summary(user_id, tenant_id=None):
         Product, CartItem.product_id == Product.id
     ).filter(
         CartItem.user_id == user_id,
-        Product.tenant_id == tenant_id
-    ).group_by(Product.id).all()
+    )
+    if tenant_id is not None:
+        q = q.filter(CartItem.tenant_id == tenant_id, Product.tenant_id == tenant_id)
+    items = q.group_by(Product.id).all()
     db.close()
     return items
 
@@ -975,7 +989,10 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         db.commit()
 
-        db.query(CartItem).filter(CartItem.user_id == user_id).delete()
+        cart_del = db.query(CartItem).filter(CartItem.user_id == user_id)
+        if tenant_id is not None:
+            cart_del = cart_del.filter(CartItem.tenant_id == tenant_id)
+        cart_del.delete(synchronize_session=False)
         db.commit()
         db.close()
 
@@ -1089,7 +1106,10 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.commit()
 
         # Clear cart (DB + memory)
-        db.query(CartItem).filter(CartItem.user_id == user_id).delete()
+        cart_del = db.query(CartItem).filter(CartItem.user_id == user_id)
+        if tenant_id is not None:
+            cart_del = cart_del.filter(CartItem.tenant_id == tenant_id)
+        cart_del.delete(synchronize_session=False)
         db.commit()
         db.close()
         set_memory_cart(context, {})

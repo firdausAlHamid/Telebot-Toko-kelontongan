@@ -4202,7 +4202,8 @@
 
     <!-- ── Mode Data Switcher Sederhana ── -->
     <div class="mode-seg-control" id="data-mode-bar">
-      <button type="button" class="mode-seg-btn active" id="btn-mode-simulasi" onclick="switchDataMode('simulasi')">Simulasi</button>
+      <button type="button" class="mode-seg-btn active" id="btn-mode-simulasi"
+        onclick="switchDataMode('simulasi')">Simulasi</button>
       <button type="button" class="mode-seg-btn" id="btn-mode-asli" onclick="switchDataMode('asli')">Toko Asli</button>
     </div>
   </header>
@@ -4716,7 +4717,8 @@
         <option value="Obat & Mandi">Obat & Mandi</option>
       </select>
       <input type="number" id="m-prod-price" class="custom-input" placeholder="Harga Jual (Rp)" />
-      <input type="number" id="m-prod-stock" class="custom-input" min="0" placeholder="Stok Awal (misal: 10)" value="0" />
+      <input type="number" id="m-prod-stock" class="custom-input" min="0" placeholder="Stok Awal (misal: 10)"
+        value="0" />
 
       <!-- Upload foto lokal -->
       <div style="margin-bottom:12px;">
@@ -6424,7 +6426,7 @@
       const selVarC = document.getElementById('var-c-cat-filter');
       if (selVarC) {
         const currVal = selVarC.value || 'all';
-        selVarC.innerHTML = `<option value="all">Semua Kat.</option>` + 
+        selVarC.innerHTML = `<option value="all">Semua Kat.</option>` +
           catNames.map(c => `<option value="${escHtml(c)}">${escHtml(c)}</option>`).join('');
         selVarC.value = currVal;
       }
@@ -6668,10 +6670,10 @@
             </div>
             <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">
               <div class="pos-prod-price" style="margin-top:0;">${fmtRp(p.price)}</div>
-              ${isOutOfStock 
-                ? `<div class="pos-prod-add-btn disabled" title="Stok Habis" style="background:rgba(239,68,68,0.15); color:#f87171; border:1px solid rgba(239,68,68,0.3); font-size:11px; cursor:not-allowed;">✕</div>`
-                : `<div class="pos-prod-add-btn">+</div>`
-              }
+              ${isOutOfStock
+            ? `<div class="pos-prod-add-btn disabled" title="Stok Habis" style="background:rgba(239,68,68,0.15); color:#f87171; border:1px solid rgba(239,68,68,0.3); font-size:11px; cursor:not-allowed;">✕</div>`
+            : `<div class="pos-prod-add-btn">+</div>`
+          }
             </div>
           </div>
         `;
