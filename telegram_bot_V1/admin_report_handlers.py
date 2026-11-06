@@ -287,7 +287,8 @@ async def handle_void_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if data.startswith("vd_ok_"):
         trx_id = int(data.split("_")[2])
-        success, message = void_transaction(trx_id)
+        tenant_id = get_tenant_id(update.effective_user.id)
+        success, message = void_transaction(trx_id, tenant_id=tenant_id)
 
         icon = "✅" if success else "❌"
         await query.edit_message_text(f"{icon} {message}")

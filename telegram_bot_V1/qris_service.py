@@ -14,7 +14,12 @@ import logging
 from datetime import datetime
 import httpx
 
-from config import KLIKQRIS_BASE_URL, KLIKQRIS_API_KEY, KLIKQRIS_ID_MERCHANT
+try:
+    from config import KLIKQRIS_BASE_URL, KLIKQRIS_API_KEY, KLIKQRIS_ID_MERCHANT
+except (ImportError, AttributeError):
+    KLIKQRIS_BASE_URL = os.getenv("KLIKQRIS_BASE_URL", "https://klikqris.id/api")
+    KLIKQRIS_API_KEY = os.getenv("KLIKQRIS_API_KEY", "")
+    KLIKQRIS_ID_MERCHANT = os.getenv("KLIKQRIS_ID_MERCHANT", "")
 
 logger = logging.getLogger(__name__)
 
@@ -158,13 +163,30 @@ def log_webhook_payload(payload: dict):
 def validate_webhook_signature(stored_signature: str | None, incoming_signature: str | None, payload: dict) -> bool:
     """
     Validasi signature dari webhook KlikQRIS.
-    
-    CATATAN AKADEMIK / TODO:
-    Dokumentasi KlikQRIS Sandbox tidak merinci rumus algoritma hashing signature.
-    Oleh karena itu, strategi validasi saat ini:
-    1. Memverifikasi incoming_signature cocok dengan signature yang tersimpan saat pembuatan transaksi QRIS.
-    2. Jika signature belum ada atau match, loloskan untuk kelancaran simulasi Sandbox.
+
+    Dokumentasi sandbox tidak merinci rumus hash, jadi yang dicek adalah
+    kecocokan signature yang disimpan saat create dengan signature webhook.
+    Jika transaksi punya signature tersimpan, incoming wajib cocok.
     """
-    if not stored_signature or not incoming_signature:
-        return True
-    return stored_signature.strip() == incoming_signature.strip()
+    if stored_signature:
+        if not incoming_signature:
+            return False
+        return stored_signature.strip() == incoming_signature.strip()
+    return True
+
+
+def decode_qris_image(qris_image: str | None):
+    """Decode data-URL / base64 QRIS image into a named BytesIO, or None."""
+    import base64
+    from io import BytesIO
+
+    if not qris_image:
+        return None
+    raw = qris_image.split(",", 1)[1] if qris_image.startswith("data:") and "," in qris_image else qris_image
+    try:
+        bio = BytesIO(base64.b64decode(raw))
+        bio.name = "qris.png"
+        bio.seek(0)
+        return bio
+    except Exception:
+        return None

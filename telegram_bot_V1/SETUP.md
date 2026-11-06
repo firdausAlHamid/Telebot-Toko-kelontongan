@@ -7,7 +7,7 @@ SETUP.md — Setup Guide for Multi-Tenant Product System
 Run the database migration to add tenant support to products:
 
 ```bash
-python migrate_products.py
+POS-KASIR-49AE41F6
 ```
 
 This will:
