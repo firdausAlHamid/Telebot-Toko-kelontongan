@@ -6638,7 +6638,23 @@
           `;
           return;
         } else {
-          grid.innerHTML = `<div style="grid-column:1/-1; text-align:center; color:var(--text-dim); padding:30px;">Tidak ada produk yang cocok.</div>`;
+          const isCatEmpty = activePosCat !== 'Semua';
+          grid.innerHTML = `
+            <div style="grid-column:1/-1; text-align:center; padding:32px 16px; background:var(--surface2); border:1px dashed var(--border-card); border-radius:var(--radius-lg); margin:8px 0;">
+              <div style="font-size:32px; margin-bottom:8px;">📦</div>
+              <div style="font-size:14px; font-weight:700; color:var(--text); margin-bottom:4px;">
+                ${isCatEmpty ? `Belum Ada Produk di Kategori "${escHtml(activePosCat)}"` : 'Tidak Ada Produk yang Cocok'}
+              </div>
+              <div style="font-size:12px; color:var(--text-dim); max-width:320px; margin:0 auto 14px;">
+                ${isCatEmpty ? `Kategori ini sudah tersimpan di database. Anda bisa langsung menambahkan produk pertama ke kategori ini.` : 'Coba ubah kata kunci pencarian Anda.'}
+              </div>
+              ${isCatEmpty ? `
+                <button type="button" class="btn-primary" style="padding:8px 16px; font-size:12px; border-radius:var(--radius-md); cursor:pointer;" onclick="openAddProductModalForCat('${escHtml(activePosCat)}')">
+                  + Tambah Produk ke ${escHtml(activePosCat)}
+                </button>
+              ` : ''}
+            </div>
+          `;
           return;
         }
       }
@@ -8443,6 +8459,14 @@
       if (previewBox) previewBox.style.display = 'none';
 
       document.getElementById('add-prod-modal').classList.add('active');
+    }
+
+    function openAddProductModalForCat(catName) {
+      openAddProductModal();
+      const catSelect = document.getElementById('m-prod-cat');
+      if (catSelect && catName) {
+        catSelect.value = catName;
+      }
     }
     function closeAddProdModal() {
       document.getElementById('add-prod-modal').classList.remove('active');

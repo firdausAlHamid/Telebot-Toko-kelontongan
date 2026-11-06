@@ -46,6 +46,31 @@ def format_date_indo(d):
     return f"{d.day} {BULAN_INDO[d.month]} {d.year}"
 
 
+# Batas wajar stok satu produk (mencegah anomali stok ribuan/puluhan ribu).
+MAX_PRODUCT_STOCK = 99999
+# Batas wajar jumlah yang diinput dalam SATU kali input (OCR / batch / excel / barang masuk).
+# Angka di atas ini hampir pasti salah ketik / tertukar dengan harga.
+MAX_STOCK_PER_INPUT = 1000
+# Pesanan QRIS yang tidak dibayar lebih lama dari ini dianggap kedaluwarsa, stok dilepas lagi.
+QRIS_RESERVATION_MINUTES = 30
+
+
+class InsufficientStockError(Exception):
+    """Raised when a sale would make stock negative. Caller MUST rollback the session."""
+
+    def __init__(self, missing):
+        self.missing = missing
+        super().__init__(format_stock_error(missing))
+
+
+def aggregate_qty(pairs):
+    """Sum quantities per product id: [(pid, qty), ...] -> {pid: total_qty}."""
+    totals = {}
+    for pid, qty in pairs:
+        totals[pid] = totals.get(pid, 0) + int(qty or 0)
+    return totals
+
+
 def find_insufficient_stock(db, product_qty: dict):
     """Return list of {product_id, name, need, stock} when qty exceeds available stock or stock is depleted."""
     missing = []
@@ -103,8 +128,26 @@ def _has_open_stock_out(db, invoice_no):
     return out_q.first() is not None
 
 
-def apply_sale_stock(db, trx, notes="Sale", created_by=None):
-    """Deduct stock for a sale. Idempotent if stock is already deducted after the last void."""
+def _refresh_product(db, pid):
+    """Reload a product instance (if it lives in this session) after a bulk UPDATE."""
+    prod = db.get(Product, pid)
+    if prod is not None:
+        db.refresh(prod)
+    return prod
+
+
+def apply_sale_stock(db, trx, notes="Sale", created_by=None, strict=True):
+    """
+    Deduct stock for a sale. Idempotent if stock is already deducted after the last void.
+
+    The deduction is an atomic conditional UPDATE (``stock = stock - qty WHERE stock >= qty``),
+    so two cashiers selling the last item at the same time cannot both succeed.
+
+    strict=True  -> raise InsufficientStockError when any product does not have enough stock
+                    (nothing is persisted; caller must rollback).
+    strict=False -> used only when money was already received (e.g. QRIS paid late): deduct
+                    what is available (never below 0) and log a warning.
+    """
     invoice_no = trx.invoice_no or f"INV-{trx.id:06d}"
     if _has_open_stock_out(db, invoice_no):
         return False
@@ -116,14 +159,44 @@ def apply_sale_stock(db, trx, notes="Sale", created_by=None):
     )
     ref = f"RESTORE-{invoice_no}" if had_void else invoice_no
     items = db.query(TransactionItem).filter(TransactionItem.transaction_id == trx.id).all()
-    for it in items:
-        prod = db.query(Product).filter(Product.id == it.product_id).first()
+    totals = aggregate_qty((it.product_id, it.quantity) for it in items)
+
+    missing = []
+    deducted = []
+    for pid, qty in totals.items():
+        if qty <= 0:
+            continue
+        updated = (
+            db.query(Product)
+            .filter(Product.id == pid, Product.stock >= qty)
+            .update({Product.stock: Product.stock - qty}, synchronize_session=False)
+        )
+        prod = _refresh_product(db, pid)
         if not prod:
             continue
-        qty = it.quantity or 0
-        prod.stock = max(0, (prod.stock or 0) - qty)
+        if not updated:
+            if strict:
+                missing.append({"product_id": pid, "name": prod.item_name, "need": qty, "stock": prod.stock or 0})
+                continue
+            # Non-strict: take whatever is left, never go negative.
+            available = max(0, prod.stock or 0)
+            logger.warning(
+                "Oversell on %s: product #%s need %s but only %s left (non-strict).",
+                invoice_no, pid, qty, available,
+            )
+            db.query(Product).filter(Product.id == pid).update(
+                {Product.stock: 0}, synchronize_session=False
+            )
+            _refresh_product(db, pid)
+            qty = available
+        deducted.append((pid, qty))
+
+    if missing:
+        raise InsufficientStockError(missing)
+
+    for pid, qty in deducted:
         db.add(StockMovement(
-            product_id=prod.id,
+            product_id=pid,
             tenant_id=trx.tenant_id,
             movement_type="out",
             quantity=-qty,
@@ -140,15 +213,35 @@ def restore_sale_stock(db, trx, notes="Void", created_by=None):
     if not _has_open_stock_out(db, invoice_no):
         return False
 
-    items = db.query(TransactionItem).filter(TransactionItem.transaction_id == trx.id).all()
-    for it in items:
-        prod = db.query(Product).filter(Product.id == it.product_id).first()
-        if not prod:
+    # Restore exactly what was taken out for this invoice (since the last void),
+    # not the line-item qty — they can differ if a non-strict deduction clamped at 0.
+    last_void = (
+        db.query(StockMovement)
+        .filter(StockMovement.reference == f"VOID-{invoice_no}")
+        .order_by(StockMovement.id.desc())
+        .first()
+    )
+    out_q = db.query(StockMovement).filter(
+        StockMovement.movement_type == "out",
+        StockMovement.reference.in_([invoice_no, f"RESTORE-{invoice_no}"]),
+    )
+    if last_void:
+        out_q = out_q.filter(StockMovement.id > last_void.id)
+    totals = aggregate_qty((m.product_id, -(m.quantity or 0)) for m in out_q.all())
+
+    for pid, qty in totals.items():
+        if not pid or qty <= 0:
             continue
-        qty = it.quantity or 0
-        prod.stock = (prod.stock or 0) + qty
+        updated = (
+            db.query(Product)
+            .filter(Product.id == pid)
+            .update({Product.stock: func.coalesce(Product.stock, 0) + qty}, synchronize_session=False)
+        )
+        if not updated:
+            continue
+        _refresh_product(db, pid)
         db.add(StockMovement(
-            product_id=prod.id,
+            product_id=pid,
             tenant_id=trx.tenant_id,
             movement_type="in",
             quantity=qty,
@@ -179,7 +272,7 @@ def settle_qris_paid(order_id, paid_at=None):
             trx = db.query(Transaction).filter(Transaction.invoice_no == qris_trx.invoice_no).first()
             if trx and (trx.status or "") not in VOID_STATUSES:
                 trx.status = "completed"
-                apply_sale_stock(db, trx, notes="Sale (QRIS paid)", created_by=trx.user_id)
+                apply_sale_stock(db, trx, notes="Sale (QRIS paid)", created_by=trx.user_id, strict=False)
 
         db.commit()
         return {

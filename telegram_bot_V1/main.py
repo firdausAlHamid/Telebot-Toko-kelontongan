@@ -43,7 +43,7 @@ async def _safe_edit_text(self, *args, **kwargs):
 Message.edit_text = _safe_edit_text
 # ============================================================================
 from sqlalchemy import func
-from database import SessionLocal, CartItem, Product, Transaction, TransactionItem, StockMovement
+from database import SessionLocal, CartItem, Product, Transaction, TransactionItem, StockMovement, Category
 from receipt_generator import generate_receipt_image
 from config import BOT_TOKEN, WHATSAPP_NUMBER, OWNER_TELEGRAM_ID
 from promotion_service import get_active_promos_for_products, calculate_cart_with_discounts, get_recommendations
@@ -132,10 +132,21 @@ def _refresh_cache_if_needed(tenant_id=None):
     db = SessionLocal()
     products = db.query(Product).filter(Product.tenant_id == tenant_id).all()
     _product_cache[tenant_id] = {
-        p.id: {"id": p.id, "item_name": p.item_name, "price": p.price, "category": p.category}
+        p.id: {"id": p.id, "item_name": p.item_name, "price": p.price, "category": p.category, "stock": p.stock or 0}
         for p in products
     }
-    _category_cache[tenant_id] = [cat[0] for cat in db.query(Product.category).distinct().filter(Product.tenant_id == tenant_id).all()]
+    # Ambil kategori dari tabel Category (agar kategori baru tanpa produk tetap muncul)
+    # digabung dengan kategori unik yang ada di produk
+    cat_names = []
+    db_cats = db.query(Category.name).filter(Category.tenant_id == tenant_id).order_by(Category.id).all()
+    for c in db_cats:
+        if c[0] and c[0] not in cat_names:
+            cat_names.append(c[0])
+    prod_cats = db.query(Product.category).distinct().filter(Product.tenant_id == tenant_id).all()
+    for c in prod_cats:
+        if c[0] and c[0] not in cat_names:
+            cat_names.append(c[0])
+    _category_cache[tenant_id] = cat_names
     db.close()
     _cache_timestamp[tenant_id] = now
 
@@ -934,6 +945,15 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         change = cash_total - grand_total
 
         db = SessionLocal()
+        # Cek ketersediaan stok sebelum transaksi diproses
+        missing = find_insufficient_stock(db, {item["product_id"]: item["qty"] for item in calc["items"]})
+        if missing:
+            db.close()
+            err_msg = format_stock_error(missing)
+            await query.answer("❌ Stok tidak mencukupi!", show_alert=True)
+            await query.edit_message_text(f"⚠️ *Transaksi Gagal!*\n\n{err_msg}\n\nSilakan kurangi jumlah barang di keranjang.")
+            return
+
         new_trx = Transaction(
             user_id=user_id,
             tenant_id=tenant_id,
@@ -956,7 +976,7 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Save invoice_no back to the transaction
         new_trx.invoice_no = trx_no
 
-        # Save transaction items (line-item snapshots) and deduct stock
+        # Save transaction items (line-item snapshots) and deduct stock via atomic apply_sale_stock
         tenant_id = get_tenant_id(user_id)
         for item in calc["items"]:
             trx_item = TransactionItem(
@@ -971,23 +991,12 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 subtotal=item["final_subtotal"]
             )
             db.add(trx_item)
-
-            # Deduct stock
-            product = db.query(Product).filter(Product.id == item["product_id"]).first()
-            if product:
-                product.stock = max(0, product.stock - item["qty"])
-                movement = StockMovement(
-                    product_id=product.id,
-                    tenant_id=tenant_id,
-                    movement_type="out",
-                    quantity=-item["qty"],
-                    reference=trx_no,
-                    notes="Sale (Cash)",
-                    created_by=user_id,
-                )
-                db.add(movement)
-
         db.commit()
+
+        # Deduct stock atomically
+        apply_sale_stock(db, new_trx, notes="Sale (Cash)", created_by=user_id)
+        db.commit()
+        invalidate_product_cache(tenant_id)
 
         cart_del = db.query(CartItem).filter(CartItem.user_id == user_id)
         if tenant_id is not None:
@@ -1051,6 +1060,13 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         payment_method = "QRIS"
 
         db = SessionLocal()
+        missing = find_insufficient_stock(db, {item["product_id"]: item["qty"] for item in calc["items"]})
+        if missing:
+            db.close()
+            err_msg = format_stock_error(missing)
+            await query.answer("❌ Stok tidak mencukupi!", show_alert=True)
+            await query.edit_message_text(f"⚠️ *Transaksi Gagal!*\n\n{err_msg}\n\nSilakan kurangi jumlah barang di keranjang.")
+            return
 
         # Save transaction with full breakdown
         new_trx = Transaction(
@@ -1088,22 +1104,12 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 subtotal=item["final_subtotal"]
             )
             db.add(trx_item)
-            
-            # Deduct stock
-            product = db.query(Product).filter(Product.id == item["product_id"]).first()
-            if product:
-                product.stock = max(0, product.stock - item["qty"])
-                movement = StockMovement(
-                    product_id=product.id,
-                    tenant_id=tenant_id,
-                    movement_type="out",
-                    quantity=-item["qty"],
-                    reference=trx_no,
-                    notes="Sale (QRIS)",
-                    created_by=user_id,
-                )
-                db.add(movement)
         db.commit()
+
+        # Deduct stock atomically
+        apply_sale_stock(db, new_trx, notes="Sale (QRIS)", created_by=user_id)
+        db.commit()
+        invalidate_product_cache(tenant_id)
 
         # Clear cart (DB + memory)
         cart_del = db.query(CartItem).filter(CartItem.user_id == user_id)
@@ -1152,13 +1158,26 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cat_prefix = parts[2]
         page = int(parts[3])
 
+        # Validasi stok produk: tolak jika habis atau melebihi sisa stok
+        _refresh_cache_if_needed(tenant_id)
+        products = _product_cache.get(tenant_id, {})
+        prod_data = products.get(product_id, {})
+        curr_stock = prod_data.get("stock", 0)
+        curr_in_cart = get_memory_cart(context).get(product_id, 0)
+
+        if curr_stock <= 0:
+            await query.answer("❌ Stok produk HABIS (0 pcs)!", show_alert=True)
+            return
+
+        if curr_in_cart + 1 > curr_stock:
+            await query.answer(f"❌ Stok tidak mencukupi! Sisa stok hanya {curr_stock} pcs.", show_alert=True)
+            return
+
         # Update in-memory cart (instant!)
         add_to_memory_cart(context, product_id)
 
         # Quick feedback via callback answer
-        _refresh_cache_if_needed(tenant_id)
-        products = _product_cache.get(tenant_id, {})
-        product_name = products.get(product_id, {}).get("item_name", "")
+        product_name = prod_data.get("item_name", "")
         await query.answer(f"➕ {product_name}")
 
         reply_markup, full_cat_name = build_products_keyboard(

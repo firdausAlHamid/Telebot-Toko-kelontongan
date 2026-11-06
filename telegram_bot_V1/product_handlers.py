@@ -18,7 +18,7 @@ from telegram.ext import (
     CallbackQueryHandler, MessageHandler, filters
 )
 
-from database import SessionLocal, Product
+from database import SessionLocal, Product, Category
 from auth import require, get_tenant_id
 from menu_helpers import show_main_menu
 
@@ -45,11 +45,19 @@ PER_PAGE = 8
 def _categories_keyboard(prefix: str, tenant_id=None, page: int = 1):
     """Build a paginated category keyboard."""
     db = SessionLocal()
-    cats = db.query(Product.category).filter(
+    cat_names = []
+    db_cats = db.query(Category.name).filter(Category.tenant_id == tenant_id).order_by(Category.id).all()
+    for c in db_cats:
+        if c[0] and c[0] not in cat_names:
+            cat_names.append(c[0])
+    prod_cats = db.query(Product.category).filter(
         Product.tenant_id == tenant_id
     ).distinct().order_by(Product.category).all()
+    for c in prod_cats:
+        if c[0] and c[0] not in cat_names:
+            cat_names.append(c[0])
     db.close()
-    cats = [c[0] for c in cats if c[0]]
+    cats = cat_names
 
     total_pages = max(1, math.ceil(len(cats) / PER_PAGE))
     page = min(page, total_pages)
