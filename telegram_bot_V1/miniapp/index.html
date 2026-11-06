@@ -56,87 +56,94 @@
       background-color: var(--bg-app);
       color: var(--text-white);
       min-height: 100vh;
-      padding-bottom: 100px;
+      padding-bottom: 110px;
       overflow-x: hidden;
       user-select: none;
       -webkit-user-select: none;
     }
 
-    /* ─── APP HEADER (Customer Facing) ─── */
+    /* ─── APP WRAPPER (Sama seperti halaman kasir: max-width agar tidak melebar saat direntangkan) ─── */
+    .app-viewport-wrapper {
+      max-width: 640px;
+      margin: 0 auto;
+      min-height: 100vh;
+      position: relative;
+    }
+
+    /* ─── APP HEADER (Customer Facing Sesuai Desain Kasir) ─── */
     .app-header {
-      background: rgba(17, 27, 39, 0.95);
-      padding: 14px 16px 12px;
+      background: var(--surface-card);
+      padding: 14px 16px 14px;
       position: sticky;
       top: 0;
       z-index: 50;
-      backdrop-filter: blur(14px);
-      -webkit-backdrop-filter: blur(14px);
       border-bottom: 1px solid var(--border-card);
     }
 
-    .header-top {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 12px;
-    }
-
-    .header-brand-info h1 {
-      font-size: 19px;
-      font-weight: 800;
-      letter-spacing: -0.4px;
-      color: var(--text-white);
-      line-height: 1.2;
-    }
-
-    .header-status-row {
+    .header-meta {
+      font-size: 11.5px;
+      color: var(--text-sub);
       display: flex;
       align-items: center;
       gap: 6px;
-      margin-top: 3px;
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--text-sub);
     }
 
-    .status-dot-active {
-      width: 7px;
-      height: 7px;
-      background-color: var(--brand-green);
-      border-radius: 50%;
-      box-shadow: 0 0 8px var(--brand-green);
-      display: inline-block;
-    }
-
-    .status-text-active {
-      color: var(--brand-green);
-      font-weight: 700;
-    }
-
-    .status-sep {
-      color: var(--text-dim);
-    }
-
-    .header-actions {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .header-btn {
-      background: var(--surface-card);
-      border: 1px solid var(--border-card);
+    .header-name {
+      font-size: 18px;
+      font-weight: 800;
+      margin-top: 5px;
+      margin-bottom: 10px;
       color: var(--text-white);
-      border-radius: var(--radius-sm);
-      padding: 6px 10px;
-      font-size: 12px;
-      font-weight: 700;
+    }
+
+    .header-actions-row {
       display: flex;
       align-items: center;
-      gap: 5px;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .btn-header-pill {
+      flex: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      height: 38px;
+      border-radius: var(--radius-full);
+      background: rgba(34, 197, 94, 0.08);
+      border: 1px solid rgba(34, 197, 94, 0.3);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
       text-decoration: none;
-      transition: transform 0.15s ease;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .btn-header-pill:active {
+      background: rgba(34, 197, 94, 0.2);
+    }
+
+    .btn-store-status-pill {
+      flex: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 38px;
+      border-radius: var(--radius-full);
+      padding: 0 14px;
+      background: rgba(34, 197, 94, 0.08);
+      border: 1px solid rgba(34, 197, 94, 0.3);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .btn-store-status-pill.closed {
+      background: rgba(239, 68, 68, 0.08);
+      border-color: rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
     }
 
     .header-btn:active {
@@ -196,70 +203,53 @@
       display: block;
     }
 
-    /* ─── HORIZONTAL CIRCULAR CATEGORY SLIDER ─── */
+    /* ─── HORIZONTAL CIRCULAR CATEGORY SLIDER (Bisa Digeser Mouse & Touch) ─── */
     .category-section {
-      padding: 14px 16px 8px;
+      padding: 12px 16px 8px;
     }
 
     .category-scroll {
       display: flex;
-      gap: 16px;
+      gap: 8px;
       overflow-x: auto;
-      padding-bottom: 6px;
+      padding-bottom: 4px;
       scrollbar-width: none;
       -ms-overflow-style: none;
+      -webkit-overflow-scrolling: touch;
+      touch-action: pan-x;
+      user-select: none;
     }
 
     .category-scroll::-webkit-scrollbar {
       display: none;
     }
 
-    .cat-item {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 7px;
-      background: transparent;
-      border: none;
-      cursor: pointer;
+    .cat-chip {
       flex-shrink: 0;
-      outline: none;
-    }
-
-    .cat-circle {
-      width: 58px;
-      height: 58px;
-      border-radius: 50%;
+      padding: 8px 16px;
+      border-radius: 10px;
       background: var(--surface-card);
-      border: 2px solid transparent;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 26px;
-      transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
-      box-shadow: var(--shadow-sm);
-    }
-
-    .cat-label {
-      font-size: 11.5px;
-      font-weight: 600;
+      border: 1px solid var(--border-card);
       color: var(--text-sub);
-      text-align: center;
-      transition: color 0.2s ease;
-      max-width: 68px;
-      line-height: 1.2;
+      font-family: var(--font-main);
+      font-size: 12.5px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      outline: none;
+      white-space: nowrap;
     }
 
-    .cat-item.active .cat-circle {
+    .cat-chip:hover {
+      border-color: rgba(255, 255, 255, 0.2);
+      color: #fff;
+    }
+
+    .cat-chip.active {
+      background: var(--brand-green);
       border-color: var(--brand-green);
-      background: #18283a;
-      box-shadow: 0 0 14px var(--brand-green-glow);
-      transform: translateY(-2px);
-    }
-
-    .cat-item.active .cat-label {
-      color: var(--text-white);
-      font-weight: 700;
+      color: #04110a;
+      font-weight: 800;
     }
 
     /* ─── PRODUCT CATALOG GRID ─── */
@@ -286,9 +276,10 @@
       color: var(--text-dim);
     }
 
+    /* Grid responsif: tidak melar aneh saat layar dilebarkan */
     .product-grid-container {
       display: grid;
-      grid-template-columns: repeat(2, 1fr);
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
       gap: 12px;
     }
 
@@ -301,19 +292,21 @@
       flex-direction: column;
       justify-content: space-between;
       position: relative;
-      transition: transform 0.2s ease;
+      transition: transform 0.2s ease, border-color 0.2s ease;
       overflow: hidden;
     }
 
     .prod-card:active {
       transform: scale(0.98);
+      border-color: var(--brand-green);
     }
 
     .prod-card-thumb-wrap {
       width: 100%;
-      height: 110px;
+      aspect-ratio: 1 / 1;
       border-radius: var(--radius-md);
-      background: rgba(15, 23, 42, 0.5);
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-card);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -322,15 +315,28 @@
       position: relative;
     }
 
+    .prod-initial-avatar {
+      font-size: 32px;
+      font-weight: 800;
+      color: #94a3b8;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      height: 100%;
+      user-select: none;
+      letter-spacing: -0.5px;
+    }
+
     .prod-card-img {
-      max-width: 90%;
-      max-height: 95px;
-      object-fit: contain;
-      filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3));
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
     }
 
     .prod-card-emoji-placeholder {
-      font-size: 46px;
+      font-size: 38px;
       line-height: 1;
     }
 
@@ -428,21 +434,28 @@
       bottom: 20px;
       left: 16px;
       right: 16px;
+      max-width: 608px;
+      margin: 0 auto;
       background: var(--brand-green);
       border-radius: var(--radius-full);
       padding: 8px 12px 8px 14px;
-      display: flex;
+      display: none;
       align-items: center;
       justify-content: space-between;
       z-index: 90;
       box-shadow: var(--shadow-green), 0 10px 30px rgba(0, 0, 0, 0.4);
-      transform: translateY(120%);
-      transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+      transform: translateY(140%);
+      opacity: 0;
+      pointer-events: none;
+      transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.25s ease;
       cursor: pointer;
     }
 
     .sticky-cart-bar.visible {
+      display: flex;
       transform: translateY(0);
+      opacity: 1;
+      pointer-events: auto;
     }
 
     .cart-pill-count {
@@ -762,36 +775,52 @@
   </style>
 </head>
 <body>
+  <div class="app-viewport-wrapper">
 
-  <!-- ─── STORE HEADER (CUSTOMER FACING) ─── -->
+  <!-- ─── STORE HEADER (CUSTOMER FACING - SESUAI DESAIN KASIR) ─── -->
   <header class="app-header">
-    <div class="header-top">
-      <div class="header-brand-info">
-        <h1 id="store-title-display">Toko Ciamis</h1>
-        <div class="header-status-row">
-          <span class="status-dot-active" id="store-status-dot"></span>
-          <span class="status-text-active" id="store-status-text">Buka</span>
-          <span class="status-sep">•</span>
-          <span id="store-hours-display">Buka 24 Jam</span>
-        </div>
-      </div>
-      
-      <div class="header-actions">
-        <a id="btn-return-pos" href="dashboard.html" style="display:none; color:#22c55e; background:rgba(34,197,94,0.15); border:1px solid #22c55e; text-decoration:none; font-size:11.5px; font-weight:700; padding:6px 10px; border-radius:12px; white-space:nowrap;">
-          💻 Masuk Kasir
+    <div class="header-meta">
+      <span id="store-title-display">Toko Ciamis</span>
+      <span>•</span>
+      <span id="clock-display">00:00:00 WIB</span>
+    </div>
+    <div class="header-name" id="user-greeting-cust">Selamat Datang!</div>
+    
+    <div class="header-actions-row">
+      <!-- Tombol Riwayat / Histori Pesanan Pelanggan -->
+      <button type="button" class="btn-header-pill" onclick="openOrderHistoryModal()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 8v4l3 3"></path>
+          <circle cx="12" cy="12" r="9"></circle>
+        </svg>
+        <span>Riwayat Pesanan</span>
+      </button>
+
+      <!-- Status Buka / Tutup Toko -->
+      <div id="store-status-pill" class="btn-store-status-pill">
+        <span style="display:inline-flex; align-items:center; gap:8px;">
+          <span id="store-status-dot" style="display:inline-block; width:9px; height:9px; border-radius:50%; background:var(--brand-green);"></span>
+          <span id="store-status-text">Buka</span>
+        </span>
+        <a id="btn-return-pos" href="dashboard.html" style="display:inline-flex; align-items:center; gap:5px; color:var(--brand-green); text-decoration:none; font-size:12px; font-weight:700; border-left:1px solid rgba(255,255,255,0.15); padding-left:8px;" title="Buka Mode Kasir POS">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+          <span>Kasir</span>
         </a>
       </div>
     </div>
 
-    <!-- Banner Keterangan Alasan Tutup (Hanya Tampil Jika Toko Ditutup) -->
-    <div id="store-closed-banner" style="display:none; background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.3); border-radius:10px; padding:8px 12px; margin-bottom:10px; font-size:12px; color:#fca5a5; line-height:1.4;">
-      <span style="font-weight:700;">🔴 Toko Sedang Tutup</span>
+    <!-- Banner Keterangan Alasan Tutup -->
+    <div id="store-closed-banner" style="display:none; background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.25); border-radius:10px; padding:10px 14px; margin-bottom:12px; font-size:12px; color:#fca5a5; line-height:1.4;">
+      <span style="font-weight:700;">Toko Sedang Tutup</span>
       <div id="store-closed-reason-text" style="font-size:11.5px; color:#fecaca; margin-top:2px;">Alasan tutup: -</div>
     </div>
 
     <!-- Search Input -->
     <div class="search-container">
-      <span class="search-icon-svg">🔍</span>
+      <svg class="search-icon-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"></circle>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+      </svg>
       <input 
         type="text" 
         class="search-input" 
@@ -804,33 +833,15 @@
     </div>
   </header>
 
-  <!-- ─── HORIZONTAL CIRCULAR CATEGORY SLIDER ─── -->
+  <!-- ─── HORIZONTAL CATEGORY SLIDER (MODERN CHIPS) ─── -->
   <section class="category-section">
     <div class="category-scroll" id="category-chips-list">
-      <button class="cat-item active" data-cat="Semua" onclick="selectCategory('Semua')">
-        <div class="cat-circle">🌟</div>
-        <span class="cat-label">Semua</span>
-      </button>
-      <button class="cat-item" data-cat="Sembako" onclick="selectCategory('Sembako')">
-        <div class="cat-circle">🍚</div>
-        <span class="cat-label">Sembako</span>
-      </button>
-      <button class="cat-item" data-cat="Makanan" onclick="selectCategory('Makanan')">
-        <div class="cat-circle">🍟</div>
-        <span class="cat-label">Makanan</span>
-      </button>
-      <button class="cat-item" data-cat="Minuman" onclick="selectCategory('Minuman')">
-        <div class="cat-circle">🥤</div>
-        <span class="cat-label">Minuman</span>
-      </button>
-      <button class="cat-item" data-cat="Kebutuhan Rumah" onclick="selectCategory('Kebutuhan Rumah')">
-        <div class="cat-circle">🧼</div>
-        <span class="cat-label">Kebutuhan Rumah</span>
-      </button>
-      <button class="cat-item" data-cat="Obat & Mandi" onclick="selectCategory('Obat & Mandi')">
-        <div class="cat-circle">💊</div>
-        <span class="cat-label">Obat & Mandi</span>
-      </button>
+      <button class="cat-chip active" data-cat="Semua" onclick="selectCategory('Semua')">Semua</button>
+      <button class="cat-chip" data-cat="Sembako" onclick="selectCategory('Sembako')">Sembako</button>
+      <button class="cat-chip" data-cat="Makanan" onclick="selectCategory('Makanan')">Makanan</button>
+      <button class="cat-chip" data-cat="Minuman" onclick="selectCategory('Minuman')">Minuman</button>
+      <button class="cat-chip" data-cat="Kebersihan" onclick="selectCategory('Kebersihan')">Kebersihan</button>
+      <button class="cat-chip" data-cat="Obat & Mandi" onclick="selectCategory('Obat & Mandi')">Obat & Mandi</button>
     </div>
   </section>
 
@@ -855,7 +866,12 @@
       <span>1 Barang</span>
     </div>
     <div class="cart-btn-trigger">
-      <span>🛒 Lihat Keranjang • <span id="cart-total-price-text">Rp0</span></span>
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
+        <circle cx="9" cy="21" r="1"></circle>
+        <circle cx="20" cy="21" r="1"></circle>
+        <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
+      </svg>
+      <span>Lihat Keranjang • <span id="cart-total-price-text">Rp0</span></span>
       <span class="arrow-icon">›</span>
     </div>
   </div>
@@ -866,7 +882,11 @@
     <div class="sheet-handle-bar"></div>
     <div class="sheet-header-box">
       <div class="sheet-title-text">
-        <span>🛒</span>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="9" cy="21" r="1"></circle>
+          <circle cx="20" cy="21" r="1"></circle>
+          <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
+        </svg>
         <span>Keranjang Belanja</span>
       </div>
       <button class="btn-close-sheet" onclick="closeCheckoutModal()">✕</button>
@@ -878,7 +898,10 @@
 
       <!-- Metode Pengambilan: Hanya Pickup / Ambil Sendiri -->
       <div class="pickup-info-box">
-        <span class="icon">🏪</span>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--brand-green); flex-shrink:0;">
+          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+          <polyline points="9 22 9 12 15 12 15 22"></polyline>
+        </svg>
         <div>
           <h5>Ambil Mandiri di Toko (Pickup)</h5>
           <p>Pesanan disiapkan oleh toko & diambil langsung oleh pembeli.</p>
@@ -902,16 +925,20 @@
       </div>
 
       <!-- Metode Pembayaran: Khusus QRIS untuk Pembelian Mandiri Online -->
-      <label class="form-field-label">Metode Pembayaran (Wajib QRIS)</label>
-      <div style="background: rgba(34, 197, 94, 0.12); border: 1.5px solid var(--brand-green); border-radius: var(--radius-md); padding: 12px; display: flex; align-items: center; gap: 12px; margin-bottom: 14px;">
-        <div style="font-size: 26px;">📱</div>
+      <label class="form-field-label">Metode Pembayaran</label>
+      <div style="background: rgba(34, 197, 94, 0.08); border: 1.5px solid var(--brand-green); border-radius: var(--radius-md); padding: 12px; display: flex; align-items: center; gap: 12px; margin-bottom: 14px;">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--brand-green); flex-shrink:0;">
+          <rect x="3" y="3" width="7" height="7"></rect>
+          <rect x="14" y="3" width="7" height="7"></rect>
+          <rect x="14" y="14" width="7" height="7"></rect>
+          <rect x="3" y="14" width="7" height="7"></rect>
+        </svg>
         <div style="flex: 1;">
-          <div style="font-size: 13.5px; font-weight: 800; color: #fff;">KlikQRIS Sandbox (Instan)</div>
+          <div style="font-size: 13.5px; font-weight: 800; color: #fff;">QRIS Toko</div>
           <div style="font-size: 11.5px; color: var(--text-sub); margin-top: 2px; line-height: 1.35;">
-            Bayar via QRIS sebelum ke toko. Simpan struk digital sebagai bukti sah untuk langsung ambil barang.
+            Bayar via QRIS saat memesan. Struk digital otomatis tersimpan untuk ambil barang.
           </div>
         </div>
-        <span style="font-size: 10px; background: var(--brand-green); color: #000; font-weight: 800; padding: 4px 8px; border-radius: 12px;">AKTIF</span>
       </div>
 
       <!-- Price Breakdown -->
@@ -934,7 +961,7 @@
     <!-- Sheet Footer -->
     <div class="sheet-footer-box">
       <button class="btn-submit-order" id="btn-submit-order-act" onclick="submitFinalOrder()">
-        <span>✅ Konfirmasi & Pesan Sekarang</span>
+        <span>Konfirmasi Pesanan</span>
       </button>
     </div>
   </div>
@@ -955,16 +982,14 @@
         <div style="font-size:10.5px; color:var(--text-dim); margin-top:2px;" id="qris-uniq-hint">Termasuk kode verifikasi unik</div>
       </div>
 
-      <div class="qris-timer-text" id="qris-timer-display">⏱️ Batas waktu pembayaran: 59:59</div>
+      <div class="qris-timer-text" id="qris-timer-display">Batas waktu pembayaran: 59:59</div>
 
-      <!-- Tombol Simulasi Pembayaran untuk Sidang TA -->
       <button class="btn-qris-sim-pay" id="btn-sim-pay" onclick="simulateQrisPayment()">
-        <span>⚡</span>
-        <span>Simulasikan Berhasil Bayar (TA Demo)</span>
+        <span>Simulasikan Pembayaran Lunas</span>
       </button>
 
       <button class="btn-qris-copy-sig" id="btn-copy-sig" onclick="copySignatureKey()">
-        📋 Salin Signature KlikQRIS Sandbox
+        <span>Salin Kode Signature</span>
       </button>
 
       <button class="btn-card-add" style="height:36px; background:transparent; border:1px solid rgba(255,255,255,0.15); color:var(--text-sub);" onclick="closeQrisModal()">
@@ -977,7 +1002,14 @@
   <div class="receipt-modal-screen" id="receipt-modal-screen">
     <div class="receipt-preview-card">
       <div style="width:100%; display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-        <span style="font-size:15px; font-weight:800; color:#fff;">🧾 Struk Transaksi Digital</span>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 6 2 18 2 18 9"></polyline>
+            <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+            <rect x="6" y="14" width="12" height="8"></rect>
+          </svg>
+          <span style="font-size:15px; font-weight:800; color:#fff;">Struk Digital</span>
+        </div>
         <button class="btn-close-sheet" onclick="closeReceiptModal()">✕</button>
       </div>
 
@@ -987,13 +1019,39 @@
 
       <div class="receipt-actions-row">
         <a id="btn-download-receipt" href="" target="_blank" download="struk_toko.png" class="btn-receipt-dl" style="text-decoration:none;">
-          <span>💾</span>
           <span>Simpan Struk</span>
         </a>
         <button class="btn-receipt-close" onclick="closeReceiptModal()">Tutup</button>
       </div>
     </div>
   </div>
+
+  <!-- ─── MODAL RIWAYAT / HISTORI PESANAN PELANGGAN ─── -->
+  <div class="modal-overlay" id="history-modal-overlay" onclick="closeOrderHistoryModal()"></div>
+  <div class="bottom-sheet" id="history-bottom-sheet" style="max-height:85vh;">
+    <div class="sheet-handle-bar"></div>
+    <div class="sheet-header-box">
+      <div class="sheet-title-text">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <polyline points="12 6 12 12 16 14"></polyline>
+        </svg>
+        <span>Riwayat Pesanan</span>
+      </div>
+      <button class="btn-close-sheet" onclick="closeOrderHistoryModal()">✕</button>
+    </div>
+
+    <div class="sheet-scroll-content" style="padding:16px;">
+      <div id="customer-order-history-list">
+        <div style="text-align:center; padding:30px; color:var(--text-sub);">
+          <div class="custom-spinner" style="margin:0 auto 10px;"></div>
+          <p>Memuat riwayat transaksi...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  </div> <!-- End .app-viewport-wrapper -->
 
   <!-- ─── JAVASCRIPT APP LOGIC ─── -->
   <script>
@@ -1026,36 +1084,33 @@
         imgEl.src = blobImgCache[url];
         return;
       }
+      const applyFallback = () => {
+        imgEl.onerror = null;
+        const init = (imgEl.alt || '?').trim().charAt(0).toUpperCase(); imgEl.outerHTML = `<span class="prod-initial-avatar">${init}</span>`;
+      };
+      imgEl.onerror = applyFallback;
+
       if (url.startsWith('/uploads') || url.startsWith(window.location.origin)) {
         fetch(url, { headers: { 'ngrok-skip-browser-warning': 'true' } })
-          .then(res => res.blob())
+          .then(res => {
+            if (!res.ok) throw new Error('Img fetch failed');
+            return res.blob();
+          })
           .then(blob => {
             const blobUrl = URL.createObjectURL(blob);
             blobImgCache[url] = blobUrl;
             imgEl.src = blobUrl;
           })
-          .catch(() => { imgEl.src = url; });
+          .catch(() => {
+            imgEl.src = url;
+          });
       } else {
         imgEl.src = url;
       }
     }
 
-    const EMOJI_MAP = {
-      'beras': '🍚', 'filma': '🌻', 'minyak': '🌻', 'bimoli': '🌻', 'tropical': '🌻',
-      'gulaku': '🧂', 'gula': '🧂', 'garam': '🧂', 'tepung': '🌾', 'indomie': '🍜',
-      'mie': '🍜', 'sedaap': '🍜', 'chitato': '🥔', 'roma': '🍪', 'biskuit': '🍪',
-      'pucuk': '🧃', 'teh': '🧃', 'aqua': '💧', 'minerale': '💧', 'kopi': '☕',
-      'kapal api': '☕', 'susu': '🥛', 'ultra': '🥛', 'rinso': '🧼', 'sunlight': '🍋',
-      'downy': '🌸', 'wipol': '🌲', 'baygon': '🦟', 'lifebuoy': '🧼', 'clear': '🧴',
-      'pepsodent': '🪥', 'tolak angin': '🌿', 'bodrex': '💊', 'kayu putih': '🌿',
-      'sabun': '🧼', 'shampoo': '🧴'
-    };
-
+    // Default placeholder adalah kotak kardus 📦 untuk semua barang yang belum berfoto
     function getProductEmoji(name) {
-      const lower = (name || '').toLowerCase();
-      for (const [key, emoji] of Object.entries(EMOJI_MAP)) {
-        if (lower.includes(key)) return emoji;
-      }
       return '📦';
     }
 
@@ -1112,11 +1167,54 @@
         console.warn('Role check error:', e);
       }
 
+      function startRealTimeClock() {
+        const clockEl = document.getElementById('clock-display');
+        if (!clockEl) return;
+        function tick() {
+          const now = new Date();
+          const hours = String(now.getHours()).padStart(2, '0');
+          const minutes = String(now.getMinutes()).padStart(2, '0');
+          const seconds = String(now.getSeconds()).padStart(2, '0');
+          clockEl.textContent = `${hours}:${minutes}:${seconds} WIB`;
+        }
+        tick();
+        setInterval(tick, 1000);
+      }
+
+      function makeScrollableHorizontal(el) {
+        if (!el) return;
+        let isDown = false;
+        let startX;
+        let scrollLeft;
+
+        el.addEventListener('mousedown', (e) => {
+          isDown = true;
+          startX = e.pageX - el.offsetLeft;
+          scrollLeft = el.scrollLeft;
+        });
+        el.addEventListener('mouseleave', () => { isDown = false; });
+        el.addEventListener('mouseup', () => { isDown = false; });
+        el.addEventListener('mousemove', (e) => {
+          if (!isDown) return;
+          e.preventDefault();
+          const x = e.pageX - el.offsetLeft;
+          const walk = (x - startX) * 1.5;
+          el.scrollLeft = scrollLeft - walk;
+        });
+      }
+
+      startRealTimeClock();
+      makeScrollableHorizontal(document.getElementById('category-chips-list'));
+
       if (tg?.initDataUnsafe?.user) {
         const u = tg.initDataUnsafe.user;
         const nameInput = document.getElementById('cust-name-input');
         if (nameInput) {
           nameInput.value = `${u.first_name || ''} ${u.last_name || ''}`.trim();
+        }
+        const greetingEl = document.getElementById('user-greeting-cust');
+        if (greetingEl && u.first_name) {
+          greetingEl.textContent = `Halo, ${u.first_name}!`;
         }
       }
 
@@ -1192,7 +1290,7 @@
 
     function selectCategory(cat) {
       currentCategory = cat;
-      document.querySelectorAll('.cat-item').forEach(btn => {
+      document.querySelectorAll('.cat-chip, .cat-item').forEach(btn => {
         btn.classList.toggle('active', btn.getAttribute('data-cat') === cat);
       });
       renderProducts();
@@ -1236,7 +1334,7 @@
       if (filtered.length === 0) {
         grid.innerHTML = `
           <div class="loader-container">
-            <div style="font-size:36px; margin-bottom:8px;">🔍</div>
+            <div style="font-size:28px; opacity:0.4; margin-bottom:8px;">∅</div>
             <p>Tidak ada produk yang cocok.</p>
           </div>
         `;
@@ -1245,10 +1343,11 @@
 
       grid.innerHTML = filtered.map(p => {
         const qty = cart[p.id]?.qty || 0;
-        const emoji = getProductEmoji(p.item_name);
+        const initial = (p.item_name || '?').trim().charAt(0).toUpperCase();
+        const placeholder = `<span class="prod-initial-avatar">${initial}</span>`;
         const imageContent = p.image_url 
-          ? `<img class="prod-card-img" data-safe-src="${p.image_url}" alt="${p.item_name}" onerror="this.outerHTML='<span class=\\'prod-card-emoji-placeholder\\'>${emoji}</span>'" />`
-          : `<span class="prod-card-emoji-placeholder">${emoji}</span>`;
+          ? `<img class="prod-card-img" data-safe-src="${p.image_url}" alt="${p.item_name}" onerror="this.outerHTML='<span class=\'prod-initial-avatar\'>${initial}</span>'" />`
+          : placeholder;
 
         return `
           <div class="prod-card" data-id="${p.id}">
@@ -1366,11 +1465,11 @@
       }
 
       container.innerHTML = entries.map(({ item, qty }) => {
-        const emoji = getProductEmoji(item.item_name);
+        const initial = (item.item_name || '?').trim().charAt(0).toUpperCase();
         return `
           <div class="sheet-cart-row">
             <div class="row-item-left">
-              <span style="font-size:24px;">${emoji}</span>
+              <span class="prod-initial-avatar" style="width:36px; height:36px; font-size:15px; border-radius:8px; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;">${initial}</span>
               <div class="row-item-info">
                 <h4>${item.item_name}</h4>
                 <p>${formatRupiah(item.price)}</p>
@@ -1450,6 +1549,10 @@
         const data = await res.json();
         if (res.ok && data.success) {
           currentInvoiceNo = data.invoice_no;
+          const orderTotal = entries.reduce((acc, it) => acc + (it.item.price * it.qty), 0);
+          const orderSummary = entries.map(it => `${it.item.item_name} (${it.qty})`).join(', ');
+          saveCustomerOrderToHistory(data.invoice_no, orderTotal, orderSummary);
+
           cart = {};
           updateCartUI();
           closeCheckoutModal();
@@ -1471,7 +1574,7 @@
         alert('Terjadi kesalahan saat memproses pesanan.');
       } finally {
         btn.disabled = false;
-        btn.innerHTML = `<span>✅ Konfirmasi & Pesan Sekarang</span>`;
+        btn.innerHTML = `<span>Konfirmasi Pesanan</span>`;
       }
     }
 
@@ -1505,7 +1608,7 @@
         if (data.success && data.is_paid) {
           if (qrisPollingInterval) clearInterval(qrisPollingInterval);
           closeQrisModal();
-          alert('🎉 Pembayaran QRIS Sukses Terverifikasi!');
+          alert('Pembayaran QRIS Sukses Terverifikasi.');
           showReceiptModal(currentInvoiceNo);
         }
       } catch (e) {
@@ -1535,14 +1638,14 @@
         if (res.ok) {
           if (qrisPollingInterval) clearInterval(qrisPollingInterval);
           closeQrisModal();
-          alert('✅ Simulasi Berhasil! Pembayaran telah ditandai LUNAS di sistem.');
+          alert('Pembayaran telah ditandai lunas di sistem.');
           showReceiptModal(currentInvoiceNo);
         }
       } catch (err) {
         alert('Gagal mengeksekusi simulasi pembayaran.');
       } finally {
         btn.disabled = false;
-        btn.innerHTML = `<span>⚡</span><span>Simulasikan Berhasil Bayar (TA Demo)</span>`;
+        btn.innerHTML = `<span>Simulasikan Pembayaran Lunas</span>`;
       }
     }
 
@@ -1553,6 +1656,113 @@
       }).catch(() => {
         prompt('Salin Signature Key berikut:', currentQrisSignature);
       });
+    }
+
+    // ─── RIWAYAT / HISTORI PESANAN PELANGGAN & LIHAT STRUK ───
+    function saveCustomerOrderToHistory(inv, total, itemsSummary) {
+      try {
+        const key = `cust_orders_${activeTenantId}`;
+        const existing = JSON.parse(localStorage.getItem(key) || '[]');
+        existing.unshift({
+          invoice_no: inv,
+          grand_total: total,
+          items: itemsSummary || '',
+          date: new Date().toLocaleString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+        });
+        localStorage.setItem(key, JSON.stringify(existing.slice(0, 30)));
+      } catch (e) {}
+    }
+
+    async function openOrderHistoryModal() {
+      const overlay = document.getElementById('history-modal-overlay');
+      const sheet = document.getElementById('history-bottom-sheet');
+      const container = document.getElementById('customer-order-history-list');
+      if (overlay) overlay.classList.add('active');
+      if (sheet) sheet.classList.add('active');
+
+      container.innerHTML = `
+        <div style="text-align:center; padding:30px; color:var(--text-sub);">
+          <div class="custom-spinner" style="margin:0 auto 10px;"></div>
+          <p>Memuat riwayat transaksi...</p>
+        </div>
+      `;
+
+      try {
+        // Coba ambil dari server pesanan online terbaru untuk tenant ini
+        const res = await fetch(`${API_BASE}/api/pos/orders?tenant_id=${activeTenantId}&limit=20`);
+        let list = [];
+        if (res.ok) {
+          const data = await res.json();
+          list = data.orders || [];
+        }
+
+        // Gabungkan juga dengan riwayat lokal perangkat
+        const localKey = `cust_orders_${activeTenantId}`;
+        const localOrders = JSON.parse(localStorage.getItem(localKey) || '[]');
+
+        if (!list.length && !localOrders.length) {
+          container.innerHTML = `
+            <div style="text-align:center; padding:36px 16px; color:var(--text-sub);">
+              <div style="font-size:28px; opacity:0.4; margin-bottom:8px;">∅</div>
+              <p style="font-weight:700;">Belum ada riwayat pesanan.</p>
+              <p style="font-size:11.5px; color:var(--text-dim); margin-top:4px;">Pesanan yang Anda buat akan tercatat di sini dan Anda dapat melihat kembali struk resminya kapan saja.</p>
+            </div>
+          `;
+          return;
+        }
+
+        // Map list server
+        const mergedMap = new Map();
+        localOrders.forEach(o => {
+          mergedMap.set(o.invoice_no, {
+            invoice_no: o.invoice_no,
+            grand_total: o.grand_total,
+            items: o.items,
+            created_at: o.date || '-'
+          });
+        });
+        list.forEach(o => {
+          mergedMap.set(o.invoice_no, {
+            invoice_no: o.invoice_no,
+            grand_total: o.grand_total,
+            items: o.items ? o.items.map(it => `${it.name} (${it.qty})`).join(', ') : '-',
+            created_at: o.created_at || '-'
+          });
+        });
+
+        const allOrders = Array.from(mergedMap.values());
+        container.innerHTML = allOrders.map(t => `
+          <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-card); border-radius:12px; padding:12px 14px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; gap:10px;">
+            <div style="flex-grow:1; min-width:0;">
+              <div style="display:flex; align-items:center; gap:6px;">
+                <span style="font-weight:800; font-size:13px; color:#fff;">${t.invoice_no}</span>
+                <span style="font-size:10px; padding:2px 7px; border-radius:10px; background:rgba(34,197,94,0.15); color:var(--brand-green); font-weight:700;">SUKSES</span>
+              </div>
+              <div style="font-size:11.5px; color:var(--text-sub); margin-top:3px; max-width:210px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                ${t.items || '-'}
+              </div>
+              <div style="font-size:12.5px; font-weight:800; color:var(--brand-green); margin-top:3px;">
+                ${formatRupiah(t.grand_total)} <span style="font-size:10.5px; font-weight:500; color:var(--text-dim);">• ${t.created_at}</span>
+              </div>
+            </div>
+            <div style="flex-shrink:0;">
+              <button style="background:rgba(34,197,94,0.15); border:1px solid rgba(34,197,94,0.3); color:#fff; border-radius:8px; padding:7px 12px; font-size:11.5px; font-weight:800; cursor:pointer; display:flex; align-items:center; gap:4px;" onclick="showReceiptModal('${t.invoice_no}')">
+                <span>🧾</span>
+                <span>Lihat Struk</span>
+              </button>
+            </div>
+          </div>
+        `).join('');
+      } catch (err) {
+        container.innerHTML = `<div style="text-align:center; color:#f87171; padding:20px;">Gagal memuat riwayat transaksi.</div>`;
+      }
+    }
+
+    function closeOrderHistoryModal() {
+      const overlay = document.getElementById('history-modal-overlay');
+      const sheet = document.getElementById('history-bottom-sheet');
+      if (overlay) overlay.classList.remove('active');
+      if (sheet) sheet.classList.remove('active');
     }
 
     // ─── STRUK THERMAL MODAL (SESUAI GAMBAR USER) ───

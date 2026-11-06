@@ -196,6 +196,23 @@ class StoreSchedule(Base):
     operating_hours = Column(String(50), nullable=True)  # e.g., "08:00 - 17:00"
     reason = Column(String(255), nullable=True)          # e.g., "Libur Lebaran"
     is_active = Column(Boolean, default=True)
+
+class SeasonalPeriod(Base):
+    __tablename__ = "seasonal_periods"
+
+    id                   = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id            = Column(Integer, ForeignKey("tenants.id"), nullable=True, index=True)
+    name                 = Column(String(100), nullable=False)
+    phase_type           = Column(String(50), nullable=False)  # active, short_break, long_break
+    start_date           = Column(Date, nullable=False)
+    end_date             = Column(Date, nullable=False)
+    target_daily_revenue = Column(Integer, default=8500000)
+    notes                = Column(String(255), nullable=True)
+    is_active            = Column(Boolean, default=True)
+    created_at           = Column(DateTime, default=datetime.now)
+    updated_at           = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
 class QrisTransaction(Base):
     """Catatan transaksi QRIS Sandbox via KlikQRIS."""
     __tablename__ = "qris_transactions"
