@@ -148,6 +148,7 @@ class Transaction(Base):
     user_id = Column(BigInteger)
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=True)  # NEW: store context
     payment_method = Column(String(50))
+    is_itemized = Column(Boolean, default=True)            # False for Quick Sales (unitemized)
 
     # --- Amount breakdown ---
     total_amount = Column(Integer, nullable=True)          # LEGACY — kept for old data
@@ -271,6 +272,11 @@ def _run_migrations(eng):
             res = conn.execute(text("SHOW COLUMNS FROM cart_items LIKE 'tenant_id'")).fetchone()
             if not res:
                 conn.execute(text("ALTER TABLE cart_items ADD COLUMN tenant_id INT NULL, ADD INDEX idx_cart_tenant (tenant_id)"))
+                conn.commit()
+
+            res_itemized = conn.execute(text("SHOW COLUMNS FROM transactions LIKE 'is_itemized'")).fetchone()
+            if not res_itemized:
+                conn.execute(text("ALTER TABLE transactions ADD COLUMN is_itemized TINYINT(1) NOT NULL DEFAULT 1"))
                 conn.commit()
     except Exception:
         pass

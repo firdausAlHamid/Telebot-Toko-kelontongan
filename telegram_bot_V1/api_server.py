@@ -13,12 +13,15 @@ Run with:
     uvicorn api_server:app --reload --host 0.0.0.0 --port 8000
 """
 
+import csv
 import hashlib
 import hmac
+import io
 import json
 import logging
-import secrets
 import math
+import re
+import secrets
 from datetime import datetime, timedelta, date
 from typing import Optional, List, Dict, Any
 from urllib.parse import unquote, parse_qsl
@@ -47,6 +50,7 @@ from transaction_service import (
     mark_qris_terminal,
     find_insufficient_stock,
     format_stock_error,
+    generate_invoice_no,
     VOID_STATUSES,
     QRIS_PAID_STATUSES,
     QRIS_DEAD_STATUSES,
@@ -76,6 +80,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
 )
 
 @app.middleware("http")
@@ -146,12 +151,21 @@ class ProductManageRequest(BaseModel):
 
 class PosCheckoutRequest(BaseModel):
     tenant_id: int | None = None
-    items: list[OrderItemSchema]
-    payment_method: str = "cash"  # "cash" or "qris"
+    items: list[OrderItemSchema] = []
+    payment_method: str = "cash"  # "cash" or "qris" or "photo"
     amount_paid: int | None = None
     discount: int = 0
     customer_name: str = "Pelanggan Toko (Langsung)"
     user_id: int | None = 0
+    is_itemized: bool = True
+    quick_amount: int | None = None
+
+
+class StockOpnameRequest(BaseModel):
+    product_id: int
+    physical_stock: int
+    notes: str | None = None
+    tenant_id: int | None = None
 
 
 class OrderStatusUpdateRequest(BaseModel):
@@ -450,7 +464,7 @@ async def mini_dashboard(request: Request):
     Owners get full store summary; kasir get their own summary.
     """
     init_data = request.headers.get("X-Telegram-Init-Data", "")
-    tg_user, bot_user = get_user_from_init_data(init_data)
+    tg_user, bot_user = get_user_from_init_data(init_data, request)
 
     if not bot_user:
         raise HTTPException(status_code=403, detail="User belum terdaftar. Aktivasi token dulu di bot.")
@@ -513,11 +527,18 @@ async def mini_dashboard(request: Request):
         store_name = tenant.store_name if tenant else None
 
     # Stock overview (total products, low stock count) - tenant-scoped
-    total_products = db.query(Product).filter(Product.tenant_id == tenant_id).count()
-    low_stock = db.query(Product).filter(
-        (Product.stock <= Product.min_stock) | (Product.stock == 0),
-        Product.tenant_id == tenant_id
-    ).count()
+    # Dihitung sinkron dengan Analisis Stok: stok fisik <= min_stock, stok 0, atau runway penjualan kritis (< 3 hari)
+    products_list = db.query(Product).filter(Product.tenant_id == tenant_id).all()
+    total_products = len(products_list)
+    
+    now = datetime.now()
+    agg = _aggregate(_sales_rows(db, tenant_id, now - timedelta(days=30)))
+    low_stock = 0
+    for p in products_list:
+        a = agg.get(p.id, {"qty": 0, "revenue": 0, "trx": set()})
+        sh = _stock_health(p.stock, a["qty"])
+        if (p.stock or 0) <= (p.min_stock or 0) or p.stock == 0 or sh.get("label") in ["Kritis", "Habis"]:
+            low_stock += 1
 
     db.close()
 
@@ -544,7 +565,7 @@ async def mini_dashboard(request: Request):
 async def mini_stock_summary(request: Request):
     """Return total stock per category."""
     init_data = request.headers.get("X-Telegram-Init-Data", "")
-    tg_user, bot_user = get_user_from_init_data(init_data)
+    tg_user, bot_user = get_user_from_init_data(init_data, request)
     if not bot_user:
         raise HTTPException(status_code=403, detail="User belum terdaftar.")
 
@@ -569,7 +590,7 @@ async def mini_stock_summary(request: Request):
 async def mini_top_products(request: Request):
     """Return top 5 best-selling products in the last 7 days."""
     init_data = request.headers.get("X-Telegram-Init-Data", "")
-    tg_user, bot_user = get_user_from_init_data(init_data)
+    tg_user, bot_user = get_user_from_init_data(init_data, request)
     if not bot_user:
         raise HTTPException(status_code=403, detail="User belum terdaftar.")
 
@@ -625,6 +646,7 @@ def _sales_rows(db, tenant_id, start, end=None):
         )
         .join(Transaction, Transaction.id == TransactionItem.transaction_id)
         .filter(Transaction.status == "completed", Transaction.created_at >= start)
+        .filter(Transaction.is_itemized.isnot(False))
     )
     if end is not None:
         q = q.filter(Transaction.created_at < end)
@@ -716,33 +738,191 @@ def _analytics_tenant(request: Request):
     return bot_user.tenant_id
 
 
+def _compute_product_analytics(db, tenant_id: int, now: datetime | None = None):
+    """Hitung metrik performa & runway stok untuk semua produk di tenant."""
+    now = now or datetime.now()
+    products = db.query(Product).filter(Product.tenant_id == tenant_id).all()
+    agg = _aggregate(_sales_rows(db, tenant_id, now - timedelta(days=30)))
+    scores, ranks = _scores(products, agg, 30)
+    out = []
+    for p in products:
+        a = agg.get(p.id, {"qty": 0, "revenue": 0, "trx": set()})
+        cls, color = _perf_class(scores[p.id])
+        sh = _stock_health(p.stock, a["qty"])
+        out.append({
+            "id": p.id, "name": p.item_name, "category": p.category or "Lainnya",
+            "image_url": p.image_url, "stock": p.stock or 0, "price": p.price or 0,
+            "qty_30d": a["qty"], "revenue_30d": a["revenue"],
+            "score": scores[p.id], "rank": ranks[p.id],
+            "class": cls, "class_color": color,
+            "stock_label": sh["label"], "stock_color": sh["color"],
+            "days_cover": sh.get("days_cover"),
+            "avg_daily": round(sh.get("avg_daily", 0), 1)
+        })
+    out.sort(key=lambda x: x["rank"])
+    return len(products), out
+
+
+def _compute_period_financial_row(
+    db, tenant_id: int, key: str, label: str, start: datetime | None, end: datetime | None
+) -> dict:
+    """Hitung ringkasan transaksi selesai untuk satu rentang waktu."""
+    q = db.query(Transaction).filter(
+        Transaction.tenant_id == tenant_id,
+        Transaction.status == "completed",
+    )
+    if start is not None:
+        q = q.filter(Transaction.created_at >= start)
+    if end is not None:
+        q = q.filter(Transaction.created_at <= end)
+    txns = q.all()
+
+    trx_count = len(txns)
+    gross = sum((t.subtotal if t.subtotal is not None else (t.grand_total or t.total_amount or 0)) for t in txns)
+    disc = sum(t.total_discount or 0 for t in txns)
+    net = sum((t.grand_total if t.grand_total is not None else (t.total_amount or 0)) for t in txns)
+    avg_basket = int(net / trx_count) if trx_count > 0 else 0
+    est_profit = int(net * 0.18)  # Estimasi margin laba kotor retail 18%
+
+    return {
+        "key": key,
+        "label": label,
+        "trx_count": trx_count,
+        "gross_revenue": gross,
+        "discount": disc,
+        "net_revenue": net,
+        "avg_basket": avg_basket,
+        "est_profit": est_profit,
+    }
+
+
+def _compute_financial_ledger(db, tenant_id: int, now: datetime | None = None, include_month: bool = False):
+    """Hitung buku besar multi-periode untuk UI Ledger dan ekspor laporan."""
+    now = now or datetime.now()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    yesterday_start = today_start - timedelta(days=1)
+    d7 = now - timedelta(days=7)
+    d30 = now - timedelta(days=30)
+
+    periods_conf = [
+        ("today", "Hari Ini", today_start, now),
+        ("yesterday", "Kemarin", yesterday_start, today_start),
+        ("last_7d", "7 Hari Terakhir", d7, now),
+        ("last_30d", "30 Hari Terakhir", d30, now),
+    ]
+    if include_month:
+        month_start = today_start.replace(day=1)
+        periods_conf.append(("month", "Bulan Ini", month_start, now))
+
+    ledger = [
+        _compute_period_financial_row(db, tenant_id, key, label, start, end)
+        for key, label, start, end in periods_conf
+    ]
+    return {"ledger": ledger, "margin_pct": 18}
+
+
+def _compute_peak_hours(db, tenant_id: int, days: int = 30, now: datetime | None = None):
+    """Analisis distribusi volume transaksi & omzet per jam (00:00 - 23:00)."""
+    now = now or datetime.now()
+    start_date = now - timedelta(days=days)
+
+    txns = db.query(
+        Transaction.created_at, Transaction.grand_total, Transaction.total_amount
+    ).filter(
+        Transaction.tenant_id == tenant_id,
+        Transaction.status == "completed",
+        Transaction.created_at >= start_date,
+    ).all()
+
+    hourly_counts = {h: 0 for h in range(24)}
+    hourly_rev = {h: 0 for h in range(24)}
+
+    for created_at, grand_amt, total_amt in txns:
+        if created_at:
+            h = created_at.hour
+            hourly_counts[h] += 1
+            amt = grand_amt if grand_amt is not None else (total_amt or 0)
+            hourly_rev[h] += float(amt)
+
+    total_trx = len(txns)
+    hours_data = []
+    max_cnt = -1
+    busiest_hour = 12
+
+    for h in range(24):
+        cnt = hourly_counts[h]
+        rev = hourly_rev[h]
+        if cnt > max_cnt:
+            max_cnt = cnt
+            busiest_hour = h
+        hours_data.append({
+            "hour": h,
+            "label": f"{h:02d}:00",
+            "count": cnt,
+            "revenue": int(rev),
+        })
+
+    if 5 <= busiest_hour < 11:
+        period_name = "Pagi"
+    elif 11 <= busiest_hour < 15:
+        period_name = "Siang"
+    elif 15 <= busiest_hour < 18:
+        period_name = "Sore"
+    else:
+        period_name = "Malam"
+
+    if total_trx > 0:
+        insight = f"Toko paling ramai pada waktu {period_name} sekitar pukul {busiest_hour:02d}:00 WIB ({max_cnt} transaksi). Pastikan kasir siap melayani dan stok barang cepat saji terisi penuh sebelum jam tersebut."
+    else:
+        insight = "Belum cukup transaksi tercatat dalam 30 hari terakhir untuk memetakan pola jam sibuk."
+
+    return {
+        "period_days": days,
+        "total_transactions": total_trx,
+        "busiest_hour": {
+            "hour": busiest_hour,
+            "label": f"{busiest_hour:02d}:00 - {((busiest_hour + 1) % 24):02d}:00",
+            "count": max_cnt if total_trx > 0 else 0,
+            "period_name": period_name,
+        },
+        "insight": insight,
+        "hours": hours_data,
+    }
+
+
+def _resolve_report_period(period: str, now: datetime):
+    """Peta parameter period laporan menjadi (label, start_dt, end_dt)."""
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    mapping = {
+        "today": ("Hari Ini", today_start, now),
+        "yesterday": ("Kemarin", today_start - timedelta(days=1), today_start),
+        "7d": ("7 Hari Terakhir", now - timedelta(days=7), now),
+        "30d": ("30 Hari Terakhir", now - timedelta(days=30), now),
+        "month": ("Bulan Ini", today_start.replace(day=1), now),
+        "all": ("Semua Periode", None, now),
+    }
+    key = (period or "30d").strip().lower()
+    if key not in mapping:
+        raise HTTPException(
+            status_code=400,
+            detail="Periode laporan tidak valid. Gunakan: today, yesterday, 7d, 30d, month, atau all.",
+        )
+    return key, *mapping[key]
+
+
+def _safe_filename_slug(name: str) -> str:
+    slug = re.sub(r"[^a-zA-Z0-9_-]+", "_", (name or "toko").strip()).strip("_").lower()
+    return slug or "toko"
+
+
 @app.get("/api/mini/product-analytics")
 async def mini_product_analytics_list(request: Request):
     """Ranking semua produk (30 hari terakhir) dengan skor performa & status stok."""
     tenant_id = _analytics_tenant(request)
     db = SessionLocal()
     try:
-        products = db.query(Product).filter(Product.tenant_id == tenant_id).all()
-        now = datetime.now()
-        agg = _aggregate(_sales_rows(db, tenant_id, now - timedelta(days=30)))
-        scores, ranks = _scores(products, agg, 30)
-        out = []
-        for p in products:
-            a = agg.get(p.id, {"qty": 0, "revenue": 0, "trx": set()})
-            cls, color = _perf_class(scores[p.id])
-            sh = _stock_health(p.stock, a["qty"])
-            out.append({
-                "id": p.id, "name": p.item_name, "category": p.category or "Lainnya",
-                "image_url": p.image_url, "stock": p.stock or 0, "price": p.price or 0,
-                "qty_30d": a["qty"], "revenue_30d": a["revenue"],
-                "score": scores[p.id], "rank": ranks[p.id],
-                "class": cls, "class_color": color,
-                "stock_label": sh["label"], "stock_color": sh["color"],
-                "days_cover": sh.get("days_cover"),
-                "avg_daily": round(sh.get("avg_daily", 0), 1)
-            })
-        out.sort(key=lambda x: x["rank"])
-        return {"total_products": len(products), "items": out}
+        total_products, out = _compute_product_analytics(db, tenant_id)
+        return {"total_products": total_products, "items": out}
     finally:
         db.close()
 
@@ -753,48 +933,474 @@ async def mini_financial_ledger(request: Request):
     tenant_id = _analytics_tenant(request)
     db = SessionLocal()
     try:
-        now = datetime.now()
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        yesterday_start = today_start - timedelta(days=1)
-        d7 = now - timedelta(days=7)
-        d30 = now - timedelta(days=30)
-
-        periods_conf = [
-            ("today", "Hari Ini", today_start, now),
-            ("yesterday", "Kemarin", yesterday_start, today_start),
-            ("last_7d", "7 Hari Terakhir", d7, now),
-            ("last_30d", "30 Hari Terakhir", d30, now),
-        ]
-
-        ledger = []
-        for key, label, start, end in periods_conf:
-            txns = db.query(Transaction).filter(
-                Transaction.tenant_id == tenant_id,
-                Transaction.status == "completed",
-                Transaction.created_at >= start,
-                Transaction.created_at <= end
-            ).all()
-
-            trx_count = len(txns)
-            gross = sum(t.subtotal or t.total_amount or 0 for t in txns)
-            disc = sum(t.total_discount or 0 for t in txns)
-            net = sum(t.grand_total or t.total_amount or 0 for t in txns)
-            avg_basket = int(net / trx_count) if trx_count > 0 else 0
-            est_profit = int(net * 0.18)  # Estimasi margin laba kotor retail 18%
-
-            ledger.append({
-                "key": key,
-                "label": label,
-                "trx_count": trx_count,
-                "gross_revenue": gross,
-                "discount": disc,
-                "net_revenue": net,
-                "avg_basket": avg_basket,
-                "est_profit": est_profit
-            })
-        return {"ledger": ledger}
+        return _compute_financial_ledger(db, tenant_id)
     finally:
         db.close()
+
+
+@app.get("/api/mini/peak-hours")
+async def mini_peak_hours(request: Request, days: int = 30):
+    """Analyze transaction volume and revenue grouped by hour of the day (00:00 to 23:00)."""
+    tenant_id = _analytics_tenant(request)
+    db = SessionLocal()
+    try:
+        return _compute_peak_hours(db, tenant_id, days=days)
+    finally:
+        db.close()
+
+
+def _build_report_xlsx(
+    store_name: str,
+    period_label: str,
+    generated_at: datetime,
+    ledger_rows: list[dict],
+    sku_items: list[dict],
+    trx_rows: list[dict],
+    peak_data: dict,
+    margin_pct: int,
+) -> io.BytesIO:
+    """Bangun workbook Excel (.xlsx) multi-sheet untuk laporan lengkap toko."""
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    wb = openpyxl.Workbook()
+    header_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
+    accent_fill = PatternFill(start_color="DCFCE7", end_color="DCFCE7", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF", size=10)
+    title_font = Font(bold=True, size=13, color="0F172A")
+    bold_font = Font(bold=True, size=10)
+    thin_border = Border(
+        left=Side(style="thin", color="CBD5E1"),
+        right=Side(style="thin", color="CBD5E1"),
+        top=Side(style="thin", color="CBD5E1"),
+        bottom=Side(style="thin", color="CBD5E1"),
+    )
+
+    def _style_header(ws, row_idx: int, num_cols: int):
+        for col in range(1, num_cols + 1):
+            cell = ws.cell(row=row_idx, column=col)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            cell.border = thin_border
+
+    def _auto_fit(ws, max_width: int = 45):
+        for col in ws.columns:
+            col_letter = col[0].column_letter
+            longest = 10
+            for cell in col:
+                val = "" if cell.value is None else str(cell.value)
+                longest = max(longest, len(val))
+            ws.column_dimensions[col_letter].width = min(longest + 4, max_width)
+
+    # Sheet 1: Ringkasan Keuangan
+    ws_fin = wb.active
+    ws_fin.title = "Ringkasan Keuangan"
+    ws_fin["A1"] = f"Laporan Keuangan & Audit — {store_name}"
+    ws_fin["A1"].font = title_font
+    ws_fin["A2"] = f"Periode Ekspor: {period_label}"
+    ws_fin["A3"] = f"Dicetak Pada: {generated_at.strftime('%d-%m-%Y %H:%M:%S')} WIB"
+    ws_fin["A4"] = f"Acuan Estimasi Laba: {margin_pct}%"
+
+    fin_headers = [
+        "Periode", "Jumlah Trx", "Omzet Kotor (Rp)", "Diskon (Rp)",
+        "Omzet Bersih (Rp)", "Rata-rata/Trx (Rp)", f"Est. Laba {margin_pct}% (Rp)"
+    ]
+    start_row = 6
+    for idx, h in enumerate(fin_headers, 1):
+        ws_fin.cell(row=start_row, column=idx, value=h)
+    _style_header(ws_fin, start_row, len(fin_headers))
+
+    for r_idx, row in enumerate(ledger_rows, start_row + 1):
+        vals = [
+            row["label"], row["trx_count"], row["gross_revenue"], row["discount"],
+            row["net_revenue"], row["avg_basket"], row["est_profit"],
+        ]
+        for c_idx, val in enumerate(vals, 1):
+            cell = ws_fin.cell(row=r_idx, column=c_idx, value=val)
+            cell.border = thin_border
+            if c_idx >= 2:
+                cell.number_format = "#,##0"
+                cell.alignment = Alignment(horizontal="right")
+    _auto_fit(ws_fin)
+
+    # Sheet 2: Matriks SKU & Stok
+    ws_sku = wb.create_sheet("Matriks SKU & Stok")
+    sku_headers = [
+        "Peringkat", "Nama Produk", "Kategori", "Harga Jual (Rp)", "Stok Saat Ini",
+        "Laku 30 Hari", "Laju/Hari", "Runway (Hari)", "Omzet 30 Hari (Rp)",
+        "Status Stok", "Kelas Performa", "Skor"
+    ]
+    for idx, h in enumerate(sku_headers, 1):
+        ws_sku.cell(row=1, column=idx, value=h)
+    _style_header(ws_sku, 1, len(sku_headers))
+
+    for r_idx, item in enumerate(sku_items, 2):
+        runway = item["days_cover"] if item["days_cover"] is not None else "Stagnan"
+        vals = [
+            item["rank"], item["name"], item["category"], item["price"],
+            item["stock"], item["qty_30d"], item["avg_daily"], runway,
+            item["revenue_30d"], item["stock_label"], item["class"], item["score"]
+        ]
+        for c_idx, val in enumerate(vals, 1):
+            cell = ws_sku.cell(row=r_idx, column=c_idx, value=val)
+            cell.border = thin_border
+            if c_idx in (4, 5, 6, 9):
+                cell.number_format = "#,##0"
+                cell.alignment = Alignment(horizontal="right")
+            elif c_idx in (7, 12):
+                cell.number_format = "0.0"
+                cell.alignment = Alignment(horizontal="right")
+    _auto_fit(ws_sku)
+
+    # Sheet 3: Riwayat Transaksi
+    ws_trx = wb.create_sheet("Riwayat Transaksi")
+    trx_headers = [
+        "No. Invoice", "Tanggal & Waktu", "Tipe Transaksi", "Metode Bayar",
+        "Status", "Rincian Barang", "Subtotal (Rp)", "Diskon (Rp)",
+        "Grand Total (Rp)", f"Est. Laba {margin_pct}% (Rp)"
+    ]
+    for idx, h in enumerate(trx_headers, 1):
+        ws_trx.cell(row=1, column=idx, value=h)
+    _style_header(ws_trx, 1, len(trx_headers))
+
+    total_sub = 0
+    total_disc = 0
+    total_grand = 0
+    total_profit = 0
+    completed_cnt = 0
+
+    for r_idx, t in enumerate(trx_rows, 2):
+        vals = [
+            t["invoice_no"], t["created_at"], t["type"], t["payment_method"],
+            t["status"], t["items_summary"], t["subtotal"], t["discount"],
+            t["grand_total"], t["est_profit"]
+        ]
+        for c_idx, val in enumerate(vals, 1):
+            cell = ws_trx.cell(row=r_idx, column=c_idx, value=val)
+            cell.border = thin_border
+            if c_idx >= 7:
+                cell.number_format = "#,##0"
+                cell.alignment = Alignment(horizontal="right")
+        if t["status"] == "completed":
+            completed_cnt += 1
+            total_sub += t["subtotal"]
+            total_disc += t["discount"]
+            total_grand += t["grand_total"]
+            total_profit += t["est_profit"]
+
+    sum_row = len(trx_rows) + 2
+    sum_vals = [
+        f"TOTAL SELESAI ({completed_cnt} trx)", "", "", "", "", "",
+        total_sub, total_disc, total_grand, total_profit
+    ]
+    for c_idx, val in enumerate(sum_vals, 1):
+        cell = ws_trx.cell(row=sum_row, column=c_idx, value=val)
+        cell.font = bold_font
+        cell.fill = accent_fill
+        cell.border = thin_border
+        if c_idx >= 7:
+            cell.number_format = "#,##0"
+            cell.alignment = Alignment(horizontal="right")
+    _auto_fit(ws_trx, max_width=55)
+
+    # Sheet 4: Analisis Jam Sibuk
+    ws_peak = wb.create_sheet("Analisis Jam Sibuk")
+    ws_peak["A1"] = "Analisis Jam Sibuk (30 Hari Terakhir)"
+    ws_peak["A1"].font = title_font
+    ws_peak["A2"] = peak_data.get("insight", "")
+    peak_headers = ["Jam", "Jumlah Transaksi", "Omzet (Rp)"]
+    for idx, h in enumerate(peak_headers, 1):
+        ws_peak.cell(row=4, column=idx, value=h)
+    _style_header(ws_peak, 4, len(peak_headers))
+    for r_idx, hrow in enumerate(peak_data.get("hours", []), 5):
+        ws_peak.cell(row=r_idx, column=1, value=hrow["label"]).border = thin_border
+        c2 = ws_peak.cell(row=r_idx, column=2, value=hrow["count"])
+        c2.border = thin_border
+        c2.number_format = "#,##0"
+        c2.alignment = Alignment(horizontal="right")
+        c3 = ws_peak.cell(row=r_idx, column=3, value=hrow["revenue"])
+        c3.border = thin_border
+        c3.number_format = "#,##0"
+        c3.alignment = Alignment(horizontal="right")
+    _auto_fit(ws_peak)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf
+
+
+def _build_report_csv(
+    store_name: str,
+    period_label: str,
+    generated_at: datetime,
+    ledger_rows: list[dict],
+    sku_items: list[dict],
+    trx_rows: list[dict],
+    margin_pct: int,
+) -> io.BytesIO:
+    """Bangun file CSV (UTF-8 BOM) berisi ringkasan keuangan, transaksi, dan matriks SKU."""
+    text_buf = io.StringIO()
+    writer = csv.writer(text_buf)
+
+    writer.writerow(["Laporan Keuangan & Audit Toko", store_name])
+    writer.writerow(["Periode Ekspor", period_label])
+    writer.writerow(["Dicetak Pada", generated_at.strftime("%d-%m-%Y %H:%M:%S") + " WIB"])
+    writer.writerow([])
+
+    writer.writerow(["RINGKASAN KEUANGAN"])
+    writer.writerow([
+        "Periode", "Jumlah Trx", "Omzet Kotor (Rp)", "Diskon (Rp)",
+        "Omzet Bersih (Rp)", "Rata-rata/Trx (Rp)", f"Est. Laba {margin_pct}% (Rp)"
+    ])
+    for row in ledger_rows:
+        writer.writerow([
+            row["label"], row["trx_count"], row["gross_revenue"], row["discount"],
+            row["net_revenue"], row["avg_basket"], row["est_profit"]
+        ])
+    writer.writerow([])
+
+    writer.writerow([f"RIWAYAT TRANSAKSI ({period_label})"])
+    writer.writerow([
+        "No. Invoice", "Tanggal & Waktu", "Tipe Transaksi", "Metode Bayar",
+        "Status", "Rincian Barang", "Subtotal (Rp)", "Diskon (Rp)",
+        "Grand Total (Rp)", f"Est. Laba {margin_pct}% (Rp)"
+    ])
+    for t in trx_rows:
+        writer.writerow([
+            t["invoice_no"], t["created_at"], t["type"], t["payment_method"],
+            t["status"], t["items_summary"], t["subtotal"], t["discount"],
+            t["grand_total"], t["est_profit"]
+        ])
+    writer.writerow([])
+
+    writer.writerow(["MATRIKS SKU & STOK (30 HARI)"])
+    writer.writerow([
+        "Peringkat", "Nama Produk", "Kategori", "Harga Jual (Rp)", "Stok",
+        "Laku 30 Hari", "Laju/Hari", "Runway (Hari)", "Omzet 30 Hari (Rp)",
+        "Status Stok", "Kelas Performa"
+    ])
+    for item in sku_items:
+        runway = item["days_cover"] if item["days_cover"] is not None else "Stagnan"
+        writer.writerow([
+            item["rank"], item["name"], item["category"], item["price"],
+            item["stock"], item["qty_30d"], item["avg_daily"], runway,
+            item["revenue_30d"], item["stock_label"], item["class"]
+        ])
+
+    return io.BytesIO(text_buf.getvalue().encode("utf-8-sig"))
+
+
+def _resolve_target_tenant_id(request: Request, tenant_id: int | None, current_user: AuthUser) -> int:
+    if tenant_id is not None:
+        return tenant_id
+    hdr_tid = request.headers.get("X-Tenant-Id")
+    if hdr_tid and hdr_tid.isdigit():
+        return int(hdr_tid)
+    return current_user.tenant_id or 1
+
+
+def _prepare_report_payload(db, tid: int, period: str, now: datetime) -> dict[str, Any]:
+    """Kumpulkan seluruh data laporan toko untuk periode tertentu."""
+    period_key, period_label, start_dt, end_dt = _resolve_report_period(period, now)
+
+    tenant = db.query(Tenant).filter(Tenant.id == tid).first()
+    store_name = tenant.store_name if tenant and tenant.store_name else f"Toko #{tid}"
+    owner_id = tenant.owner_id if tenant else None
+
+    fin_data = _compute_financial_ledger(db, tid, now=now, include_month=True)
+    ledger_rows = fin_data["ledger"]
+    margin_pct = fin_data["margin_pct"]
+    if period_key == "all":
+        ledger_rows.append(
+            _compute_period_financial_row(db, tid, "all", "Semua Periode", None, now)
+        )
+
+    _, sku_items = _compute_product_analytics(db, tid, now=now)
+    peak_data = _compute_peak_hours(db, tid, days=30, now=now)
+
+    trx_q = db.query(Transaction).filter(Transaction.tenant_id == tid)
+    if start_dt is not None:
+        trx_q = trx_q.filter(Transaction.created_at >= start_dt)
+    if end_dt is not None:
+        trx_q = trx_q.filter(Transaction.created_at <= end_dt)
+    txns = trx_q.order_by(Transaction.created_at.desc(), Transaction.id.desc()).all()
+
+    trx_ids = [t.id for t in txns]
+    items_by_trx: dict[int, list[str]] = {}
+    if trx_ids:
+        trx_items = db.query(TransactionItem).filter(
+            TransactionItem.transaction_id.in_(trx_ids)
+        ).all()
+        for it in trx_items:
+            items_by_trx.setdefault(it.transaction_id, []).append(
+                f"{it.product_name} x{it.quantity}"
+            )
+
+    trx_rows = []
+    for t in txns:
+        net = t.grand_total if t.grand_total is not None else (t.total_amount or 0)
+        sub = t.subtotal if t.subtotal is not None else net
+        disc = t.total_discount or 0
+        is_quick = (t.is_itemized is False)
+        summary_items = (
+            "- (Penjualan Cepat)"
+            if is_quick
+            else (", ".join(items_by_trx.get(t.id, [])) or "-")
+        )
+        trx_rows.append({
+            "invoice_no": t.invoice_no or f"INV-{t.id:06d}",
+            "created_at": t.created_at.strftime("%Y-%m-%d %H:%M:%S") if t.created_at else "-",
+            "type": "Penjualan Cepat" if is_quick else "Reguler",
+            "payment_method": t.payment_method or "-",
+            "status": t.status or "-",
+            "items_summary": summary_items,
+            "subtotal": sub,
+            "discount": disc,
+            "grand_total": net,
+            "est_profit": int(net * (margin_pct / 100.0)) if t.status == "completed" else 0,
+        })
+
+    return {
+        "period_key": period_key,
+        "period_label": period_label,
+        "store_name": store_name,
+        "owner_id": owner_id,
+        "ledger_rows": ledger_rows,
+        "sku_items": sku_items,
+        "trx_rows": trx_rows,
+        "peak_data": peak_data,
+        "margin_pct": margin_pct,
+    }
+
+
+@app.get("/api/mini/report/export")
+async def mini_report_export(
+    request: Request,
+    format: str = "xlsx",
+    period: str = "30d",
+    tenant_id: int | None = None,
+    current_user: AuthUser = Depends(require_roles(["owner", "kasir"])),
+):
+    """Unduh laporan lengkap toko (Keuangan, Transaksi, Matriks SKU, Jam Sibuk) dalam format Excel (.xlsx) atau CSV (.csv)."""
+    fmt = (format or "xlsx").strip().lower()
+    if fmt not in ("xlsx", "csv"):
+        raise HTTPException(status_code=400, detail="Format ekspor harus 'xlsx' atau 'csv'.")
+
+    now = datetime.now()
+    tid = _resolve_target_tenant_id(request, tenant_id, current_user)
+
+    db = SessionLocal()
+    try:
+        payload = _prepare_report_payload(db, tid, period, now)
+    finally:
+        db.close()
+
+    slug = _safe_filename_slug(payload["store_name"])
+    date_tag = now.strftime("%Y%m%d")
+    filename = f"laporan_{slug}_{payload['period_key']}_{date_tag}.{fmt}"
+
+    if fmt == "xlsx":
+        buf = _build_report_xlsx(
+            store_name=payload["store_name"],
+            period_label=payload["period_label"],
+            generated_at=now,
+            ledger_rows=payload["ledger_rows"],
+            sku_items=payload["sku_items"],
+            trx_rows=payload["trx_rows"],
+            peak_data=payload["peak_data"],
+            margin_pct=payload["margin_pct"],
+        )
+        media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    else:
+        buf = _build_report_csv(
+            store_name=payload["store_name"],
+            period_label=payload["period_label"],
+            generated_at=now,
+            ledger_rows=payload["ledger_rows"],
+            sku_items=payload["sku_items"],
+            trx_rows=payload["trx_rows"],
+            margin_pct=payload["margin_pct"],
+        )
+        media_type = "text/csv; charset=utf-8"
+
+    return StreamingResponse(
+        buf,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-cache",
+        },
+    )
+
+
+@app.post("/api/mini/report/send-telegram")
+async def mini_report_send_telegram(
+    request: Request,
+    period: str = "30d",
+    tenant_id: int | None = None,
+    current_user: AuthUser = Depends(require_roles(["owner", "kasir"])),
+):
+    """Kirim file laporan Excel (.xlsx) langsung ke chat Telegram pengguna melalui bot."""
+    if not BOT_TOKEN:
+        raise HTTPException(status_code=503, detail="BOT_TOKEN belum dikonfigurasi.")
+
+    now = datetime.now()
+    tid = _resolve_target_tenant_id(request, tenant_id, current_user)
+
+    db = SessionLocal()
+    try:
+        payload = _prepare_report_payload(db, tid, period, now)
+    finally:
+        db.close()
+
+    target_chat_id = (
+        current_user.telegram_id
+        if current_user.telegram_id and current_user.telegram_id > 0
+        else (payload["owner_id"] or OWNER_TELEGRAM_ID)
+    )
+    if not target_chat_id or target_chat_id <= 0:
+        raise HTTPException(status_code=400, detail="Telegram ID penerima tidak ditemukan.")
+
+    buf = _build_report_xlsx(
+        store_name=payload["store_name"],
+        period_label=payload["period_label"],
+        generated_at=now,
+        ledger_rows=payload["ledger_rows"],
+        sku_items=payload["sku_items"],
+        trx_rows=payload["trx_rows"],
+        peak_data=payload["peak_data"],
+        margin_pct=payload["margin_pct"],
+    )
+
+    slug = _safe_filename_slug(payload["store_name"])
+    date_tag = now.strftime("%Y%m%d")
+    filename = f"laporan_{slug}_{payload['period_key']}_{date_tag}.xlsx"
+    caption = f"📊 Laporan Toko ({payload['period_label']})\n🏪 {payload['store_name']}"
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client_http:
+            resp = await client_http.post(
+                f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument",
+                data={"chat_id": str(target_chat_id), "caption": caption},
+                files={
+                    "document": (
+                        filename,
+                        buf.getvalue(),
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
+                },
+            )
+        if resp.status_code != 200 or not resp.json().get("ok"):
+            raise HTTPException(status_code=502, detail="Bot gagal mengirim file ke Telegram.")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning(f"Gagal mengirim laporan ke Telegram chat={target_chat_id}: {exc}")
+        raise HTTPException(status_code=502, detail="Koneksi ke API Telegram gagal.")
+
+    return {"ok": True, "filename": filename, "sent_to_telegram": True}
 
 
 @app.get("/api/mini/product-analytics/{product_id}")
@@ -1232,7 +1838,8 @@ async def get_seasonal_analytics(request: Request):
             .filter(
                 Transaction.tenant_id == tenant_id,
                 Transaction.status == "completed",
-                Transaction.created_at >= active_start
+                Transaction.created_at >= active_start,
+                Transaction.is_itemized.isnot(False)
             )
             .group_by(TransactionItem.product_id)
             .all()
@@ -1246,7 +1853,8 @@ async def get_seasonal_analytics(request: Request):
                 Transaction.tenant_id == tenant_id,
                 Transaction.status == "completed",
                 func.date(Transaction.created_at) >= brk_start,
-                func.date(Transaction.created_at) <= brk_end
+                func.date(Transaction.created_at) <= brk_end,
+                Transaction.is_itemized.isnot(False)
             )
             .group_by(TransactionItem.product_id)
             .all()
@@ -1389,7 +1997,7 @@ async def get_seasonal_analytics(request: Request):
 async def mini_consignment(request: Request):
     """Return list of consignment products and their stock."""
     init_data = request.headers.get("X-Telegram-Init-Data", "")
-    tg_user, bot_user = get_user_from_init_data(init_data)
+    tg_user, bot_user = get_user_from_init_data(init_data, request)
     if not bot_user:
         raise HTTPException(status_code=403, detail="User belum terdaftar.")
 
@@ -1414,7 +2022,7 @@ async def mini_consignment(request: Request):
 async def mini_kasir_list(request: Request):
     """Return list of active kasir for the owner's tenant."""
     init_data = request.headers.get("X-Telegram-Init-Data", "")
-    tg_user, bot_user = get_user_from_init_data(init_data)
+    tg_user, bot_user = get_user_from_init_data(init_data, request)
 
     if not bot_user or bot_user.role != "owner":
         raise HTTPException(status_code=403, detail="Hanya owner yang bisa melihat daftar kasir.")
@@ -1472,7 +2080,7 @@ async def mini_generate_kasir_token(request: Request, current_user: AuthUser = D
 async def mini_transactions(request: Request, limit: int = 20, offset: int = 0):
     """Recent transactions for the Mini App."""
     init_data = request.headers.get("X-Telegram-Init-Data", "")
-    tg_user, bot_user = get_user_from_init_data(init_data)
+    tg_user, bot_user = get_user_from_init_data(init_data, request)
 
     if not bot_user:
         raise HTTPException(status_code=403, detail="User belum terdaftar.")
@@ -1903,6 +2511,7 @@ async def mini_create_order(req: CreateOrderRequest):
     tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
     store_name = tenant.store_name if tenant else "Toko Kelontong"
     tenant_owner_id = tenant.owner_id if tenant else None
+    store_qris_url = tenant.qris_image_url if tenant else None
 
     try:
         resolved = _resolve_sale_products(db, req.items, tenant_id)
@@ -1937,7 +2546,7 @@ async def mini_create_order(req: CreateOrderRequest):
     db.commit()
     db.refresh(new_trx)
 
-    trx_no = f"INV-{new_trx.id:06d}"
+    trx_no = generate_invoice_no(db, now)
     new_trx.invoice_no = trx_no
 
     for prod, qty in resolved:
@@ -2003,14 +2612,37 @@ async def mini_create_order(req: CreateOrderRequest):
                 "signature": qris_res["signature"]
             }
         except Exception as e:
-            logger.error(f"Error initiating KlikQRIS transaction: {e}")
-            new_trx.status = "cancelled"
-            db.commit()
-            db.close()
-            raise HTTPException(
-                status_code=502,
-                detail="Gagal membuat QRIS. Silakan coba metode lain atau ulangi pesanan."
+            logger.warning(f"Error initiating KlikQRIS transaction ({e}). Using internal sandbox fallback.")
+            mock_sig = secrets.token_hex(16)
+            mock_expired = (datetime.now() + timedelta(minutes=60)).strftime("%Y-%m-%d %H:%M:%S")
+            fallback_qr_image = store_qris_url if store_qris_url else f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={order_id}"
+            qris_trx = QrisTransaction(
+                order_id=order_id,
+                invoice_no=trx_no,
+                tenant_id=tenant_id,
+                amount=grand_total,
+                amount_uniq=0,
+                total_amount=grand_total,
+                status="PENDING",
+                signature=mock_sig,
+                qris_url=fallback_qr_image,
+                qris_image=fallback_qr_image,
+                expired_at=mock_expired,
+                keterangan=f"KlikQRIS Sandbox Fallback {trx_no}"
             )
+            db.add(qris_trx)
+            db.commit()
+
+            qris_info = {
+                "order_id": order_id,
+                "amount": grand_total,
+                "amount_uniq": 0,
+                "total_amount": grand_total,
+                "qris_image": fallback_qr_image,
+                "qris_url": fallback_qr_image,
+                "expired_at": mock_expired,
+                "signature": mock_sig
+            }
 
     db.close()
 
@@ -2032,6 +2664,7 @@ async def mini_create_order(req: CreateOrderRequest):
         "grand_total": grand_total,
         "is_qris": is_qris,
         "qris": qris_info,
+        "store_qris_image_url": store_qris_url,
         "receipt_url": f"/api/receipt/{trx_no}",
         "message": "Pesanan Anda berhasil dibuat dan siap diproses!"
     }
@@ -2297,15 +2930,124 @@ async def pos_direct_checkout(
     req: PosCheckoutRequest,
     current_user: AuthUser = Depends(require_roles(["owner", "kasir"]))
 ):
-    """Kasir / Owner melakukan transaksi penjualan langsung di toko secara cepat."""
-    if not req.items:
+    """Kasir / Owner melakukan transaksi penjualan langsung di toko secara cepat.
+    Mendukung transaksi reguler (dengan rincian produk) maupun Penjualan Cepat (Quick Sale tanpa rincian barang)."""
+    is_itemized = req.is_itemized if req.is_itemized is not None else True
+
+    if is_itemized and not req.items:
         raise HTTPException(status_code=400, detail="Keranjang belanja kosong.")
+
+    quick_val = req.quick_amount or req.amount_paid or 0
+    if not is_itemized and quick_val <= 0:
+        raise HTTPException(status_code=400, detail="Nominal penjualan cepat harus lebih besar dari Rp 0.")
 
     db = SessionLocal()
     tenant_id = req.tenant_id or current_user.tenant_id or 1
     tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
     store_name = tenant.store_name if tenant else "Toko Ciamis"
+    now = datetime.now()
 
+    method_lower = req.payment_method.lower()
+    is_qris = method_lower == "qris"
+    is_photo_qris = method_lower in ["photo", "qris_foto", "qris_toko"]
+
+    # ════════════════════════════════════════════════════════════════
+    # FLOW 1: QUICK SALE (Penjualan Cepat Tanpa Rincian Barang)
+    # ════════════════════════════════════════════════════════════════
+    if not is_itemized:
+        subtotal = quick_val
+        discount = req.discount or 0
+        grand_total = max(0, subtotal - discount)
+
+        if is_qris:
+            pay_label = "QRIS Sandbox (Cepat)"
+            trx_status = "pending"
+        elif is_photo_qris:
+            pay_label = "QRIS Toko (Cepat)"
+            trx_status = "completed"
+        else:
+            pay_label = "TUNAI (Penjualan Cepat)"
+            trx_status = "completed"
+
+        new_trx = Transaction(
+            user_id=req.user_id or 0,
+            tenant_id=tenant_id,
+            payment_method=pay_label,
+            total_amount=grand_total,
+            subtotal=subtotal,
+            total_discount=discount,
+            grand_total=grand_total,
+            status=trx_status,
+            is_itemized=False,
+            created_at=now
+        )
+        db.add(new_trx)
+        db.commit()
+        db.refresh(new_trx)
+
+        trx_no = generate_invoice_no(db, now)
+        new_trx.invoice_no = trx_no
+        db.commit()
+
+        # NOTE: Quick Sale TIDAK mengurangi stok dan TIDAK membuat record TransactionItem.
+
+        qris_data = None
+        if is_qris:
+            order_id = f"POSQC-{new_trx.id:05d}-{secrets.token_hex(2).upper()}"
+            try:
+                qris_res = await qris_service.create_qris_transaction(
+                    order_id=order_id,
+                    amount=grand_total,
+                    keterangan=f"Quick Sale {trx_no}"
+                )
+                qris_trx = QrisTransaction(
+                    order_id=order_id,
+                    invoice_no=trx_no,
+                    tenant_id=tenant_id,
+                    amount=int(qris_res["amount"]),
+                    amount_uniq=int(qris_res["amount_uniq"]),
+                    total_amount=int(qris_res["total_amount"]),
+                    status=qris_res["status"],
+                    signature=qris_res["signature"],
+                    qris_url=qris_res["qris_url"],
+                    qris_image=qris_res["qris_image"],
+                    expired_at=qris_res["expired_at"],
+                    keterangan=f"Quick Sale {trx_no}"
+                )
+                db.add(qris_trx)
+                db.commit()
+                qris_data = qris_res
+            except Exception as e:
+                logger.error(f"POS Quick Sale KlikQRIS error: {e}")
+                new_trx.status = "cancelled"
+                db.commit()
+                db.close()
+                raise HTTPException(
+                    status_code=502,
+                    detail="Gagal membuat QRIS. Transaksi dibatalkan."
+                )
+
+        db.close()
+
+        change_amount = max(0, (req.amount_paid or grand_total) - grand_total) if not is_qris else 0
+
+        return {
+            "success": True,
+            "invoice_no": trx_no,
+            "subtotal": subtotal,
+            "grand_total": grand_total,
+            "amount_paid": req.amount_paid or grand_total,
+            "change": change_amount,
+            "is_qris": is_qris,
+            "is_itemized": False,
+            "qris": qris_data,
+            "receipt_url": f"/api/receipt/{trx_no}",
+            "message": "Penjualan Cepat (Quick Sale) berhasil dicatat!"
+        }
+
+    # ════════════════════════════════════════════════════════════════
+    # FLOW 2: REGULAR SALE (Dengan Rincian Barang & Pengurangan Stok)
+    # ════════════════════════════════════════════════════════════════
     try:
         resolved = _resolve_sale_products(db, req.items, tenant_id)
     except HTTPException:
@@ -2315,11 +3057,6 @@ async def pos_direct_checkout(
     subtotal = sum(prod.price * qty for prod, qty in resolved)
     discount = req.discount or 0
     grand_total = max(0, subtotal - discount)
-    now = datetime.now()
-
-    method_lower = req.payment_method.lower()
-    is_qris = method_lower == "qris"
-    is_photo_qris = method_lower in ["photo", "qris_foto", "qris_toko"]
 
     if is_qris:
         pay_label = "QRIS Sandbox"
@@ -2335,17 +3072,19 @@ async def pos_direct_checkout(
         user_id=req.user_id or 0,
         tenant_id=tenant_id,
         payment_method=pay_label,
+        total_amount=grand_total,
         subtotal=subtotal,
         total_discount=discount,
         grand_total=grand_total,
         status=trx_status,
+        is_itemized=True,
         created_at=now
     )
     db.add(new_trx)
     db.commit()
     db.refresh(new_trx)
 
-    trx_no = f"INV-{new_trx.id:06d}"
+    trx_no = generate_invoice_no(db, now)
     new_trx.invoice_no = trx_no
 
     for prod, qty in resolved:
@@ -3425,6 +4164,61 @@ async def mini_stock_import_excel(
         "added": added,
         "updated": updated,
         "total_processed": len(df)
+    }
+
+
+# ==============================================================================
+# STOCK OPNAME (Penyesuaian Stok Fisik vs Stok Sistem)
+# ==============================================================================
+
+@app.post("/api/mini/stock/opname")
+async def mini_stock_opname(
+    req: StockOpnameRequest,
+    current_user: AuthUser = Depends(require_roles(["owner", "kasir"]))
+):
+    """Stock Opname: Rekonsiliasi stok fisik nyata di rak dengan stok sistem.
+    Mencatat selisih di tabel stock_movements sebagai tipe 'adjustment' dan mereferensikan OPNAME."""
+    db = SessionLocal()
+    tenant_id = req.tenant_id or current_user.tenant_id or 1
+    product = db.query(Product).filter(
+        Product.id == req.product_id,
+        Product.tenant_id == tenant_id
+    ).first()
+
+    if not product:
+        db.close()
+        raise HTTPException(status_code=404, detail="Produk tidak ditemukan di toko ini.")
+
+    product_id = product.id
+    product_name = product.item_name
+    old_stock = int(product.stock or 0)
+    new_stock = max(0, int(req.physical_stock))
+    diff = new_stock - old_stock
+
+    product.stock = new_stock
+
+    opname_notes = req.notes.strip() if req.notes and req.notes.strip() else f"Stock Opname: fisik={new_stock}, sistem={old_stock}, selisih={diff:+d}"
+    movement = StockMovement(
+        tenant_id=tenant_id,
+        product_id=product_id,
+        movement_type="adjustment",
+        quantity=diff,
+        reference="OPNAME",
+        notes=opname_notes,
+        created_by=current_user.telegram_id
+    )
+    db.add(movement)
+    db.commit()
+    db.close()
+
+    return {
+        "success": True,
+        "product_id": product_id,
+        "product_name": product_name,
+        "old_stock": old_stock,
+        "new_stock": new_stock,
+        "diff": diff,
+        "message": f"Stok {product_name} berhasil disesuaikan ({old_stock} -> {new_stock}, selisih {diff:+d})."
     }
 
 

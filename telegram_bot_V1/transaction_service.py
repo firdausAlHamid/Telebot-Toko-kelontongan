@@ -46,6 +46,30 @@ def format_date_indo(d):
     return f"{d.day} {BULAN_INDO[d.month]} {d.year}"
 
 
+def generate_invoice_no(db, created_at: datetime | None = None) -> str:
+    """Generate uniform invoice code `TRX-YYYYMMDD-XXXX` (displayed as `#DDMM-XXXX`)."""
+    dt = created_at or datetime.now()
+    prefix = f"TRX-{dt.strftime('%Y%m%d')}-"
+    existing = (
+        db.query(Transaction.invoice_no)
+        .filter(Transaction.invoice_no.like(f"{prefix}%"))
+        .all()
+    )
+    max_seq = 1000
+    for (inv,) in existing:
+        if not inv:
+            continue
+        suffix = inv[len(prefix):]
+        if suffix.isdigit():
+            max_seq = max(max_seq, int(suffix))
+    next_seq = max_seq + 1
+    candidate = f"{prefix}{next_seq:04d}"
+    while db.query(Transaction.id).filter(Transaction.invoice_no == candidate).first():
+        next_seq += 1
+        candidate = f"{prefix}{next_seq:04d}"
+    return candidate
+
+
 # Batas wajar stok satu produk (mencegah anomali stok ribuan/puluhan ribu).
 MAX_PRODUCT_STOCK = 99999
 # Batas wajar jumlah yang diinput dalam SATU kali input (OCR / batch / excel / barang masuk).

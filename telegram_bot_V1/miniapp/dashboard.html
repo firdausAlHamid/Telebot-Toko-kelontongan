@@ -10,6 +10,20 @@
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      corePlugins: { preflight: false },
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+          }
+        }
+      }
+    };
+  </script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <!-- Cropper.js for image crop & fit -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css" />
@@ -2022,24 +2036,14 @@
 
     /* ── Seasonal Academic & Restock Styles ── */
     .card-seasonal {
-      background: linear-gradient(145deg, rgba(30, 41, 59, 0.7), rgba(15, 23, 42, 0.85));
-      border: 1px solid rgba(56, 189, 248, 0.25);
-      border-radius: 16px;
-      padding: 14px;
-      margin-bottom: 12px;
+      background: #1c2738;
+      border: 1px solid rgba(148, 163, 184, 0.16);
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 14px;
       position: relative;
       overflow: hidden;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
-    }
-
-    .card-seasonal::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 3px;
-      background: linear-gradient(90deg, #38bdf8, #22c55e, #fbbf24);
+      box-shadow: 0 1px 3px rgba(2, 6, 23, 0.25);
     }
 
     .seasonal-header {
@@ -2263,6 +2267,193 @@
       background: rgba(34, 197, 94, 0.12);
       color: #86efac;
       border: 1px solid rgba(34, 197, 94, 0.25);
+    }
+
+    /* ── Fintech Redesigned Restock Cards (Dark + Light Soft Theme) ── */
+    .seasonal-fintech-card {
+      background: #1c2738;
+      border: 1px solid rgba(148, 163, 184, 0.14);
+      box-shadow: 0 1px 3px rgba(2, 6, 23, 0.24);
+    }
+
+    .seasonal-fintech-card:hover {
+      border-color: rgba(148, 163, 184, 0.28);
+    }
+
+    .seasonal-fintech-title {
+      color: #f8fafc;
+    }
+
+    .seasonal-fintech-sub {
+      color: #cbd5e1;
+    }
+
+    .seasonal-fintech-muted {
+      color: #94a3b8;
+    }
+
+    .seasonal-fintech-value {
+      color: #f1f5f9;
+    }
+
+    .seasonal-fintech-well {
+      background: rgba(15, 23, 42, 0.52);
+      border: 1px solid rgba(148, 163, 184, 0.08);
+    }
+
+    .seasonal-fintech-thumb {
+      background: rgba(15, 23, 42, 0.65);
+      border: 1px solid rgba(148, 163, 184, 0.14);
+      color: #cbd5e1;
+    }
+
+    .seasonal-fintech-track {
+      background: rgba(15, 23, 42, 0.72);
+    }
+
+    .seasonal-fintech-divider {
+      border-top: 1px solid rgba(148, 163, 184, 0.12);
+    }
+
+    .seasonal-fintech-tab {
+      background: #1c2738;
+      border: 1px solid rgba(148, 163, 184, 0.14);
+      color: #94a3b8;
+    }
+
+    .seasonal-fintech-tab.active-emerald {
+      background: rgba(16, 185, 129, 0.14);
+      border-color: rgba(16, 185, 129, 0.5);
+      color: #6ee7b7;
+    }
+
+    .seasonal-fintech-tab.active-amber {
+      background: rgba(245, 158, 11, 0.14);
+      border-color: rgba(245, 158, 11, 0.5);
+      color: #fcd34d;
+    }
+
+    .seasonal-fintech-banner-emerald {
+      background: rgba(16, 185, 129, 0.09);
+      border: 1px solid rgba(16, 185, 129, 0.22);
+      color: #6ee7b7;
+    }
+
+    .seasonal-fintech-banner-amber {
+      background: rgba(245, 158, 11, 0.09);
+      border: 1px solid rgba(245, 158, 11, 0.22);
+      color: #fcd34d;
+    }
+
+    .seasonal-badge-warn {
+      background: rgba(245, 158, 11, 0.14);
+      color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, 0.26);
+    }
+
+    .seasonal-badge-info {
+      background: rgba(59, 130, 246, 0.14);
+      color: #60a5fa;
+      border: 1px solid rgba(59, 130, 246, 0.26);
+    }
+
+    .seasonal-badge-good {
+      background: rgba(16, 185, 129, 0.14);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.26);
+    }
+
+    body.light-mode .seasonal-fintech-card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05), 0 1px 2px rgba(15, 23, 42, 0.03);
+    }
+
+    body.light-mode .seasonal-fintech-card:hover {
+      border-color: #cbd5e1;
+    }
+
+    body.light-mode .seasonal-fintech-title {
+      color: #0f172a;
+    }
+
+    body.light-mode .seasonal-fintech-sub {
+      color: #334155;
+    }
+
+    body.light-mode .seasonal-fintech-muted {
+      color: #64748b;
+    }
+
+    body.light-mode .seasonal-fintech-value {
+      color: #0f172a;
+    }
+
+    body.light-mode .seasonal-fintech-well {
+      background: #f8fafc;
+      border-color: #e2e8f0;
+    }
+
+    body.light-mode .seasonal-fintech-thumb {
+      background: #f1f5f9;
+      border-color: #e2e8f0;
+      color: #334155;
+    }
+
+    body.light-mode .seasonal-fintech-track {
+      background: #e2e8f0;
+    }
+
+    body.light-mode .seasonal-fintech-divider {
+      border-top-color: #f1f5f9;
+    }
+
+    body.light-mode .seasonal-fintech-tab {
+      background: #ffffff;
+      border-color: #e2e8f0;
+      color: #64748b;
+    }
+
+    body.light-mode .seasonal-fintech-tab.active-emerald {
+      background: #ecfdf5;
+      border-color: #10b981;
+      color: #047857;
+    }
+
+    body.light-mode .seasonal-fintech-tab.active-amber {
+      background: #fffbeb;
+      border-color: #f59e0b;
+      color: #b45309;
+    }
+
+    body.light-mode .seasonal-fintech-banner-emerald {
+      background: #ecfdf5;
+      border-color: #a7f3d0;
+      color: #065f46;
+    }
+
+    body.light-mode .seasonal-fintech-banner-amber {
+      background: #fffbeb;
+      border-color: #fde68a;
+      color: #92400e;
+    }
+
+    body.light-mode .seasonal-badge-warn {
+      background: #fffbeb;
+      color: #b45309;
+      border-color: #fde68a;
+    }
+
+    body.light-mode .seasonal-badge-info {
+      background: #eff6ff;
+      color: #1d4ed8;
+      border-color: #bfdbfe;
+    }
+
+    body.light-mode .seasonal-badge-good {
+      background: #ecfdf5;
+      color: #047857;
+      border-color: #a7f3d0;
     }
 
 
@@ -3358,157 +3549,7 @@
       color: #f87171;
     }
 
-    /* ── Mini Variant Pills Bar for Season ── */
-    .season-variant-pills-bar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 6px;
-      background: rgba(255, 255, 255, 0.02);
-      border: 1px solid var(--border-card);
-      border-radius: 8px;
-      padding: 4px 6px;
-      margin-top: 8px;
-      margin-bottom: 10px;
-    }
-
-    body.light-mode .season-variant-pills-bar {
-      background: #f8fafc;
-    }
-
-    .season-var-btn-group {
-      display: flex;
-      gap: 4px;
-    }
-
-    .s-var-btn {
-      background: transparent;
-      border: 1px solid transparent;
-      border-radius: 5px;
-      padding: 3px 8px;
-      font-size: 10px;
-      font-weight: 700;
-      color: var(--text-sub);
-      cursor: pointer;
-      transition: all 0.12s ease;
-    }
-
-    .s-var-btn.active {
-      background: var(--surface2);
-      color: var(--text-white);
-      border-color: var(--border-card);
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
-    }
-
-    body.light-mode .s-var-btn.active {
-      background: #ffffff;
-      color: #0f172a;
-      border-color: #cbd5e1;
-    }
-
-    /* ── Varian A: Linear Strip Overflow-Proof ── */
-    .timeline-weeks-bar {
-      display: flex;
-      width: 100%;
-      gap: 2px;
-      margin: 8px 0;
-      height: 24px;
-      box-sizing: border-box;
-      overflow: hidden;
-    }
-
-    .timeline-week-seg {
-      flex: 1 1 0;
-      min-width: 0;
-      box-sizing: border-box;
-      background: rgba(255, 255, 255, 0.07);
-      border-radius: 3px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 8.5px;
-      font-weight: 700;
-      color: var(--text-sub);
-      position: relative;
-      user-select: none;
-    }
-
-    body.light-mode .timeline-week-seg {
-      background: #e2e8f0;
-      color: #64748b;
-    }
-
-    .timeline-week-seg.passed {
-      background: rgba(34, 197, 94, 0.22);
-      color: var(--brand-green);
-    }
-
-    .timeline-week-seg.active {
-      background: var(--brand-green);
-      color: #04110a;
-      font-weight: 800;
-      box-shadow: 0 0 6px rgba(34, 197, 94, 0.35);
-    }
-
-    /* ── Varian B: Milestone Phase Cards ── */
-    .season-phase-cards-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 8px;
-      margin: 10px 0;
-    }
-
-    .season-phase-card {
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid var(--border-card);
-      border-radius: 8px;
-      padding: 10px 8px;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      position: relative;
-      overflow: hidden;
-    }
-
-    body.light-mode .season-phase-card {
-      background: #ffffff;
-      border-color: #e2e8f0;
-    }
-
-    .season-phase-card.active-phase {
-      border-color: rgba(34, 197, 94, 0.6);
-      background: rgba(34, 197, 94, 0.06);
-    }
-
-    .phase-badge {
-      font-size: 9px;
-      font-weight: 800;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: var(--text-sub);
-    }
-
-    .phase-badge.current {
-      color: var(--brand-green);
-    }
-
-    .phase-name {
-      font-size: 11px;
-      font-weight: 800;
-      color: var(--text-white);
-      margin: 4px 0 2px;
-    }
-
-    body.light-mode .phase-name {
-      color: #0f172a;
-    }
-
-    .phase-range {
-      font-size: 10px;
-      color: var(--text-sub);
-    }
-
-    /* ── Varian C: 2-Row Matrix (8x2) ── */
+    /* ── Kalender Siklus Akademik: Grid 2 Baris (8x2) ── */
     .timeline-grid-2rows {
       display: flex;
       flex-direction: column;
@@ -3557,230 +3598,76 @@
       box-shadow: 0 0 6px rgba(34, 197, 94, 0.35);
     }
 
-    /* ════ VARIANT SWITCHER & VARIATIONS B & C STYLES ════ */
-    .ringkasan-variant-nav {
-      margin-bottom: 16px;
-    }
-
-    .variant-pill-selector {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 6px;
-      background: var(--surface2);
-      padding: 4px;
-      border-radius: var(--radius-md);
-      border: 1px solid var(--border-card);
-    }
-
-    .variant-btn {
-      background: transparent;
-      border: 1px solid transparent;
-      color: var(--text-sub);
-      padding: 8px 4px;
-      border-radius: var(--radius-sm);
-      cursor: pointer;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 2px;
-      transition: all 0.15s ease;
-    }
-
-    .variant-btn .v-tag {
-      font-size: 9.5px;
-      font-weight: 800;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      opacity: 0.75;
-    }
-
-    .variant-btn .v-name {
-      font-size: 11.5px;
-      font-weight: 700;
-    }
-
-    .variant-btn.active {
-      background: var(--surface-card);
-      color: var(--text-white);
-      border-color: rgba(255, 255, 255, 0.12);
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
-    }
-
-    body.light-mode .variant-btn.active {
-      border-color: #cbd5e1;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-    }
-
-    .variant-desc-bar {
-      font-size: 11px;
-      color: var(--text-sub);
-      margin-top: 8px;
-      padding: 6px 10px;
-      background: rgba(255, 255, 255, 0.03);
-      border-left: 3px solid var(--brand-green);
-      border-radius: 4px;
-      line-height: 1.4;
-    }
-
-    body.light-mode .variant-desc-bar {
-      background: #f1f5f9;
-      color: #475569;
-    }
-
-    /* ════ VARIAN B: RETAIL ACTION COCKPIT ════ */
-    .cockpit-kpi-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 10px;
-      margin-bottom: 14px;
-    }
-
-    .cockpit-kpi-card {
-      background: var(--surface-card);
-      border: 1px solid var(--border-card);
-      border-radius: var(--radius-md);
-      padding: 12px 14px;
-    }
-
-    .cockpit-kpi-title {
-      font-size: 10.5px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: var(--text-sub);
-    }
-
-    .cockpit-kpi-value {
-      font-size: 17px;
-      font-weight: 800;
-      color: var(--text-white);
-      margin-top: 4px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .cockpit-kpi-sub {
-      font-size: 10.5px;
-      color: var(--text-sub);
-      margin-top: 2px;
-    }
-
-    .action-card {
+    /* ════ REPORT EXPORT BAR (UNDUH LAPORAN) ════ */
+    .report-export-card {
       background: var(--surface-card);
       border: 1px solid var(--border-card);
       border-radius: var(--radius-md);
       padding: 14px;
-      margin-bottom: 12px;
+      margin-bottom: 14px;
     }
 
-    .action-card-header {
+    .report-export-controls {
       display: flex;
-      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
       align-items: center;
-      margin-bottom: 10px;
+      margin-top: 10px;
     }
 
-    .action-card-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 12px;
-      font-weight: 800;
-    }
-
-    .action-card-badge.danger {
-      color: #ef4444;
-    }
-
-    .action-card-badge.warn {
-      color: #f59e0b;
-    }
-
-    .action-card-badge.good {
-      color: var(--brand-green);
-    }
-
-    .action-copy-btn {
-      background: rgba(255, 255, 255, 0.06);
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      color: var(--text-sub);
-      font-size: 11px;
-      font-weight: 700;
-      padding: 4px 8px;
+    .report-export-select {
+      flex: 1 1 140px;
+      height: 38px;
+      padding: 0 10px;
       border-radius: var(--radius-sm);
+      border: 1px solid var(--border-card);
+      background: var(--surface2);
+      color: var(--text-white);
+      font-family: var(--font-main);
+      font-size: 12px;
+      font-weight: 700;
+      outline: none;
+      cursor: pointer;
+    }
+
+    body.light-mode .report-export-select {
+      background: #f8fafc;
+      color: #0f172a;
+      border-color: #cbd5e1;
+    }
+
+    .btn-report-dl {
+      height: 38px;
+      padding: 0 14px;
+      border-radius: var(--radius-sm);
+      border: 1px solid transparent;
+      font-family: var(--font-main);
+      font-size: 12px;
+      font-weight: 800;
       cursor: pointer;
       display: inline-flex;
       align-items: center;
-      gap: 4px;
-    }
-
-    .action-copy-btn:hover {
-      background: rgba(255, 255, 255, 0.1);
-      color: var(--text-white);
-    }
-
-    body.light-mode .action-copy-btn {
-      background: #f1f5f9;
-      border-color: #cbd5e1;
-      color: #334155;
-    }
-
-    .action-item-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 8px 0;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-      font-size: 12px;
-      cursor: pointer;
-    }
-
-    .action-item-row:hover {
-      background: rgba(255, 255, 255, 0.02);
-    }
-
-    .action-item-row:last-child {
-      border-bottom: none;
-    }
-
-    body.light-mode .action-item-row {
-      border-bottom-color: #f1f5f9;
-    }
-
-    .action-item-name {
-      font-weight: 700;
-      color: var(--text-white);
-      line-height: 1.3;
-    }
-
-    .action-item-meta {
-      font-size: 10.5px;
-      color: var(--text-sub);
-      margin-top: 2px;
-    }
-
-    .action-item-tag {
-      font-size: 10px;
-      font-weight: 800;
-      padding: 2px 7px;
-      border-radius: 4px;
-      text-align: right;
+      justify-content: center;
+      gap: 6px;
+      transition: opacity 0.15s ease, transform 0.1s ease;
       white-space: nowrap;
     }
 
-    .action-item-tag.danger {
-      background: rgba(239, 68, 68, 0.12);
-      color: #ef4444;
+    .btn-report-dl:active {
+      transform: scale(0.98);
     }
 
-    .action-item-tag.warn {
-      background: rgba(245, 158, 11, 0.12);
-      color: #f59e0b;
+    .btn-report-dl:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
     }
 
-    /* ════ VARIAN C: FINANCIAL & INVENTORY LEDGER ════ */
+    .btn-report-dl.primary {
+      background: var(--brand-green);
+      color: #04110a;
+    }
+
+    /* ════ LAPORAN: FINANCIAL & INVENTORY LEDGER ════ */
     .ledger-section {
       background: var(--surface-card);
       border: 1px solid var(--border-card);
@@ -3861,7 +3748,7 @@
       color: var(--brand-green);
     }
 
-    /* Season Timeline Bar (Varian C) */
+    /* Season Timeline Box */
     .season-timeline-box {
       background: rgba(255, 255, 255, 0.03);
       border: 1px solid var(--border-card);
@@ -3872,47 +3759,6 @@
 
     body.light-mode .season-timeline-box {
       background: #f8fafc;
-    }
-
-    .timeline-weeks-bar {
-      display: flex;
-      gap: 3px;
-      margin: 10px 0;
-      height: 22px;
-    }
-
-    .timeline-week-seg {
-      flex: 1;
-      background: rgba(255, 255, 255, 0.08);
-      border-radius: 3px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 9px;
-      font-weight: 700;
-      color: var(--text-sub);
-      position: relative;
-    }
-
-    body.light-mode .timeline-week-seg {
-      background: #e2e8f0;
-      color: #64748b;
-    }
-
-    .timeline-week-seg.passed {
-      background: rgba(34, 197, 94, 0.22);
-      color: var(--brand-green);
-    }
-
-    .timeline-week-seg.active {
-      background: var(--brand-green);
-      color: #04110a;
-      font-weight: 800;
-      box-shadow: 0 0 6px rgba(34, 197, 94, 0.4);
-    }
-
-    .timeline-week-seg.exam {
-      border: 1px dashed rgba(245, 158, 11, 0.6);
     }
 
     /* ════ CALM THEME: Ringkasan & Analisis (1 aksen hijau, tanpa gradien/glow) ════ */
@@ -4346,9 +4192,40 @@
       <div id="online-orders-list" class="orders-container view-grid">Memuat pesanan masuk...</div>
     </div>
 
-    <!-- ════ TAB 3: RINGKASAN & ANALISIS (3 Sub-Halaman) ════ -->
+    <!-- ════ TAB 3: LAPORAN (Buku Besar & Audit Mendalam) ════ -->
     <div class="tab-content" id="tab-ringkasan">
-      <!-- ════ TAB 3: LAPORAN (Buku Kas & Matriks SKU) ════ -->
+
+      <!-- 0. Export / Unduh Laporan Toko -->
+      <div class="report-export-card">
+        <div class="ledger-section-title">
+          <span>Unduh Laporan Toko</span>
+          <span style="font-size:10.5px; font-weight:700; color:var(--brand-green);">Excel (.xlsx)</span>
+        </div>
+        <div class="ledger-section-sub" style="margin-bottom:0;">
+          Ekspor buku besar keuangan, matriks SKU, rincian transaksi, dan jam sibuk
+        </div>
+        <div class="report-export-controls">
+          <select id="report-export-period" class="report-export-select" aria-label="Pilih periode laporan">
+            <option value="today">Hari Ini</option>
+            <option value="yesterday">Kemarin</option>
+            <option value="7d">7 Hari Terakhir</option>
+            <option value="30d" selected>30 Hari Terakhir</option>
+            <option value="month">Bulan Ini</option>
+            <option value="all">Semua Periode</option>
+          </select>
+          <button type="button" id="btn-export-report-xlsx" class="btn-report-dl primary"
+            onclick="downloadStoreReport()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            <span>Unduh</span>
+          </button>
+        </div>
+        <div id="report-export-status" style="font-size:11px; color:var(--text-sub); margin-top:6px; display:none;"></div>
+      </div>
 
       <!-- 1. Multi-Period Financial Ledger Table -->
       <div class="ledger-section">
@@ -4366,7 +4243,7 @@
                 <th style="text-align:right;">Trx</th>
                 <th style="text-align:right;">Total Omzet</th>
                 <th style="text-align:right;">Rata2/Trx</th>
-                <th style="text-align:right;">Est. Laba (18%)</th>
+                <th style="text-align:right;" id="var-c-profit-header">Est. Laba (18%)</th>
               </tr>
             </thead>
             <tbody id="var-c-financial-body">
@@ -4384,8 +4261,8 @@
       <!-- 2. Master SKU & Stock Ledger Table -->
       <div class="ledger-section">
         <div class="ledger-section-title">
-          <span>Matriks 35 SKU & Runway Inventaris</span>
-          <span style="font-size:11px; color:var(--text-sub); font-weight:600;" id="var-c-sku-count">35 Produk</span>
+          <span id="var-c-sku-title">Matriks SKU & Runway Inventaris</span>
+          <span style="font-size:11px; color:var(--text-sub); font-weight:600;" id="var-c-sku-count">Memuat...</span>
         </div>
         <div class="ledger-section-sub">Audit seluruh stok barang, laju penjualan 30 hari, dan proyeksi hari habis</div>
 
@@ -4421,7 +4298,7 @@
             </thead>
             <tbody id="var-c-master-body">
               <tr>
-                <td colspan="8" style="text-align:center; padding:20px;">Memuat tabel master SKU...</td>
+                <td colspan="9" style="text-align:center; padding:20px;">Memuat tabel master SKU...</td>
               </tr>
             </tbody>
           </table>
@@ -4448,23 +4325,41 @@
           </div>
         </div>
 
-        <!-- Container Dynamic Widget View (Variasi C: Grid 2 Baris) -->
+        <!-- Container Dynamic Widget View (Grid 2 Baris) -->
         <div id="season-widget-dynamic-view">
-          <!-- Dynamically rendered (Variasi C Grid 2 Baris) -->
+          <!-- Dynamically rendered (Grid 2 Baris) -->
         </div>
 
-        <!-- Financial Macro Stats (Masa Aktif vs Masa Libur) -->
+        <!-- Financial Macro Stats (Masa Aktif vs Masa Libur - Terikat Dinamis ke API) -->
         <div class="seasonal-stat-box" style="margin-top:10px; display:grid; grid-template-columns:1fr 1fr; gap:10px;">
           <div>
             <div style="font-size:10.5px; color:var(--text-sub);">Rata2 Harian Masa Aktif</div>
             <div style="font-size:16px; font-weight:800; color:var(--text-white); margin-top:3px;"
-              id="var-c-active-rev">Rp 8.644.394</div>
+              id="var-c-active-rev">Rp 0</div>
           </div>
           <div>
             <div style="font-size:10.5px; color:var(--text-sub);">Rata2 Harian Masa Libur</div>
-            <div style="font-size:16px; font-weight:800; color:var(--text-sub); margin-top:3px;" id="var-c-break-rev">Rp
-              1.618.620</div>
+            <div style="font-size:16px; font-weight:800; color:var(--text-sub); margin-top:3px;" id="var-c-break-rev">Rp 0</div>
           </div>
+        </div>
+      </div>
+
+      <!-- 4. Container Dynamic Seasonal Analytics (Smart Restock, Deadstock & Sembako) -->
+      <div id="seasonal-analytics-container" style="margin-top:14px;"></div>
+
+      <!-- 5. Analisis Jam Sibuk (Peak Hours) -->
+      <div class="ledger-section" id="peak-hours-section" style="margin-top:14px;">
+        <div class="ledger-section-title">
+          <span>Analisis Jam Sibuk (Kapan Toko Paling Ramai?)</span>
+          <span style="font-size:11px; font-weight:700; color:var(--brand-green);" id="peak-hour-badge">🔥 Memuat...</span>
+        </div>
+        <div class="ledger-section-sub">Distribusi volume transaksi &amp; omzet kasir per jam (30 hari terakhir) untuk optimasi shift kerja</div>
+
+        <div style="position:relative; height:220px; margin-top:12px; width:100%;">
+          <canvas id="peak-hours-canvas"></canvas>
+        </div>
+        <div id="peak-hours-insight" style="font-size:11.5px; color:var(--text-sub); margin-top:10px; line-height:1.5; padding:10px 12px; background:rgba(255,255,255,0.03); border:1px solid var(--border-card); border-radius:8px;">
+          Memuat wawasan jam sibuk...
         </div>
       </div>
     </div>
@@ -5412,7 +5307,8 @@
           loadSeasonalAnalytics(),
           loadSeasonsList(),
           loadStoreScheduleData(),
-          loadStoreQrisData()
+          loadStoreQrisData(),
+          loadPeakHoursChart()
         ]);
       } catch (err) {
         console.error('Error reloading data for mode:', err);
@@ -5790,21 +5686,59 @@
     let seasonalData = null;
     let activeSeasonalTab = 'restock'; // 'restock' | 'hold' | 'staples'
 
+    function updateMacroRevBoxes(macro) {
+      if (!macro) return;
+      const actEl = document.getElementById('var-c-active-rev');
+      const brkEl = document.getElementById('var-c-break-rev');
+      if (actEl) actEl.textContent = fmtRp(macro.avg_active_daily_revenue || 0);
+      if (brkEl) brkEl.textContent = fmtRp(macro.avg_break_daily_revenue || 0);
+    }
+
     async function loadSeasonalAnalytics() {
-      const container = document.getElementById('seasonal-analytics-container');
-      if (!container) return;
       try {
         const res = await fetch(`${API_BASE}/api/mini/seasonal-analytics?tenant_id=${activeTenantId}`, { headers });
         if (!res.ok) throw new Error('HTTP ' + res.status);
         seasonalData = await res.json();
+
+        // Update dynamic macro comparison boxes in section 3
+        if (seasonalData && seasonalData.macro_comparison) {
+          updateMacroRevBoxes(seasonalData.macro_comparison);
+        }
+
         renderSeasonalUI(seasonalData);
       } catch (err) {
-        container.innerHTML = `
-          <div style="padding:12px; background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.2); border-radius:12px; font-size:12px; color:#fca5a5;">
-            Gagal memuat analisis musiman: ${escHtml(err.message)}
-          </div>
-        `;
+        console.warn('Gagal memuat analisis musiman:', err);
+        const container = document.getElementById('seasonal-analytics-container');
+        if (container) {
+          container.innerHTML = `
+            <div style="padding:12px; background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.2); border-radius:12px; font-size:12px; color:#fca5a5;">
+              Gagal memuat analisis musiman: ${escHtml(err.message)}
+            </div>
+          `;
+        }
       }
+    }
+
+    const _SEASONAL_SVG = {
+      sparkles: `<svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>`,
+      pkg: `<svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 9.4 7.55 4.24"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.29 7 12 12 20.71 7"/><line x1="12" y1="22" x2="12" y2="12"/></svg>`,
+      pause: `<svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="10" y1="15" x2="10" y2="9"/><line x1="14" y1="15" x2="14" y2="9"/></svg>`,
+      shield: `<svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>`,
+      trend: `<svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>`,
+      calendar: `<svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`,
+      sliders: `<svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>`,
+      alert: `<svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`,
+      cartPlus: `<svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/></svg>`,
+      chart: `<svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>`,
+      chevDown: `<svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`,
+      chevUp: `<svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>`,
+    };
+
+    function _renderSeasonalThumb(item) {
+      if (item.image_url) {
+        return `<img src="${escHtml(item.image_url)}" alt="${escHtml(item.name || '')}" class="w-full h-full object-cover" />`;
+      }
+      return escHtml((item.name || 'P').charAt(0).toUpperCase());
     }
 
     function renderSeasonalUI(data) {
@@ -5812,87 +5746,96 @@
       if (!container || !data) return;
 
       const curr = data.current_period || {};
-      const next = data.next_period || {};
       const macro = data.macro_comparison || {};
-      const counts = data.counts || {};
 
       const isActivePhase = curr.phase_type === 'active';
       const phaseBadgeClass = isActivePhase ? 'active' : 'break';
-      const phaseLabel = isActivePhase ? `🎓 Kuliah Aktif (Minggu ke-${curr.current_week} / ${curr.total_weeks})` : '🌴 Libur Semester';
+      const phaseLabel = isActivePhase
+        ? `Kuliah Aktif (Minggu ke-${curr.current_week} / ${curr.total_weeks})`
+        : 'Libur Semester';
 
-      // Achievement color
       const ach = curr.today_achievement_pct || 0;
       const achColor = ach >= 100 ? 'var(--brand-green)' : 'var(--text-sub)';
 
-      let bannerHtml = `
-        <div class="card-seasonal">
-          <div class="seasonal-header">
-            <div>
-              <div style="font-size:11px; font-weight:700; color:var(--text-sub); text-transform:uppercase; letter-spacing:0.5px;">Siklus Akademik Toko</div>
-              <div style="font-size:15px; font-weight:800; color:#fff; margin-top:2px;">${escHtml(curr.name || 'Semester Berjalan')}</div>
+      const bannerHtml = `
+        <div class="font-sans">
+          <div class="card-seasonal">
+            <div class="seasonal-header">
+              <div>
+                <div style="font-size:11px; font-weight:700; color:var(--text-sub); text-transform:uppercase; letter-spacing:0.5px;">Siklus Akademik Toko</div>
+                <div style="font-size:15px; font-weight:800; color:var(--text-white); margin-top:2px;">${escHtml(curr.name || 'Semester Berjalan')}</div>
+              </div>
+              <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
+                <span class="seasonal-badge ${phaseBadgeClass}">${_SEASONAL_SVG.calendar}<span>${phaseLabel}</span></span>
+                <button type="button" class="btn-manage-season" onclick="openSeasonModal()" title="Atur Kalender Musim">${_SEASONAL_SVG.sliders}<span>Atur Kalender</span></button>
+              </div>
             </div>
-            <div style="display:flex; align-items:center; gap:6px;">
-              <span class="seasonal-badge ${phaseBadgeClass}">${phaseLabel}</span>
-              <button class="btn-manage-season" onclick="openSeasonModal()" title="Atur Kalender Musim">⚙️ Atur Kalender</button>
-            </div>
-          </div>
 
-          <!-- Progress Timeline -->
-          <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-sub); margin-top:6px;">
-            <span>Hari ke-${curr.elapsed_days} dari ${curr.total_days} (${curr.progress_pct}%)</span>
-            <span>${curr.remaining_days} hari lagi s/d libur</span>
-          </div>
-          <div class="seasonal-progress-track">
-            <div class="seasonal-progress-fill" style="width:${curr.progress_pct}%;"></div>
-          </div>
-
-          <!-- Metrics Comparison Grid -->
-          <div class="seasonal-stats-grid">
-            <div class="seasonal-stat-box">
-              <div class="seasonal-stat-label">Target Harian (Musim Aktif)</div>
-              <div class="seasonal-stat-value" style="color:var(--brand-green);">Rp ${(curr.target_daily_revenue || 0).toLocaleString('id-ID')}</div>
-              <div style="font-size:10.5px; color:var(--text-sub); margin-top:2px;">Standar toko saat mahasiswa ramai</div>
+            <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-sub); margin-top:6px;">
+              <span>Hari ke-${curr.elapsed_days} dari ${curr.total_days} (${curr.progress_pct}%)</span>
+              <span>${curr.remaining_days} hari lagi s/d libur</span>
             </div>
-            <div class="seasonal-stat-box">
-              <div class="seasonal-stat-label">Omzet Hari Ini (${ach}%)</div>
-              <div class="seasonal-stat-value" style="color:${achColor};">Rp ${(curr.today_actual_revenue || 0).toLocaleString('id-ID')}</div>
-              <div style="font-size:10.5px; color:var(--text-sub); margin-top:2px;">${curr.today_trx_count || 0} transaksi tercatat</div>
+            <div class="seasonal-progress-track">
+              <div class="seasonal-progress-fill" style="width:${curr.progress_pct}%;"></div>
             </div>
-          </div>
 
-          <!-- Macro Insight Pill -->
-          <div class="seasonal-macro-pill">
-            <span style="font-size:18px;">📈</span>
-            <div>
-              Saat kuliah aktif, rata-rata omzet toko <b>Rp ${(macro.avg_active_daily_revenue || 0).toLocaleString('id-ID')}/hari</b> — naik <b>${macro.ratio_multiplier || 1}x lipat (+${macro.student_boost_pct || 0}%)</b> dibanding masa liburan (Rp ${(macro.avg_break_daily_revenue || 0).toLocaleString('id-ID')}/hari).
+            <div class="seasonal-stats-grid">
+              <div class="seasonal-stat-box">
+                <div class="seasonal-stat-label">Target Harian (Musim Aktif)</div>
+                <div class="seasonal-stat-value" style="color:var(--brand-green);">Rp ${(curr.target_daily_revenue || 0).toLocaleString('id-ID')}</div>
+                <div style="font-size:10.5px; color:var(--text-sub); margin-top:2px;">Standar toko saat mahasiswa ramai</div>
+              </div>
+              <div class="seasonal-stat-box">
+                <div class="seasonal-stat-label">Omzet Hari Ini (${ach}%)</div>
+                <div class="seasonal-stat-value" style="color:${achColor};">Rp ${(curr.today_actual_revenue || 0).toLocaleString('id-ID')}</div>
+                <div style="font-size:10.5px; color:var(--text-sub); margin-top:2px;">${curr.today_trx_count || 0} transaksi tercatat</div>
+              </div>
             </div>
-          </div>
-        </div>
 
-        <!-- Perkiraan & Rekomendasi Restock Cerdas -->
-        <div style="margin-top:14px;">
-          <div style="display:flex; justify-content:space-between; align-items:center;">
-            <div>
-              <div style="font-size:13.5px; font-weight:800; color:#fff;">💡 Perkiraan Restock Cerdas Musiman</div>
-              <div style="font-size:11px; color:var(--text-sub);">Prediksi belanja akurat agar stok siap & cegah modal tertimbun saat libur</div>
+            <div class="seasonal-macro-pill">
+              <span class="text-sky-400 shrink-0">${_SEASONAL_SVG.trend}</span>
+              <div>
+                Saat kuliah aktif, rata-rata omzet toko <b>Rp ${(macro.avg_active_daily_revenue || 0).toLocaleString('id-ID')}/hari</b> — naik <b>${macro.ratio_multiplier || 1}x lipat (+${macro.student_boost_pct || 0}%)</b> dibanding masa liburan (Rp ${(macro.avg_break_daily_revenue || 0).toLocaleString('id-ID')}/hari).
+              </div>
             </div>
           </div>
 
-          <!-- Tab Toggles -->
-          <div class="seasonal-tabs-row">
-            <button class="seasonal-tab-pill ${activeSeasonalTab === 'restock' ? 'active' : ''}" onclick="switchSeasonalTab('restock')">
-              📦 Restock Mahasiswa (${data.student_restock ? data.student_restock.length : 0})
-            </button>
-            <button class="seasonal-tab-pill warn-tab ${activeSeasonalTab === 'hold' ? 'active' : ''}" onclick="switchSeasonalTab('hold')">
-              🛑 Tahan Beli Jelang Libur (${data.hold_warnings ? data.hold_warnings.length : 0})
-            </button>
-            <button class="seasonal-tab-pill ${activeSeasonalTab === 'staples' ? 'active' : ''}" onclick="switchSeasonalTab('staples')">
-              🏠 Sembako Stabil (${data.stable_staples ? data.stable_staples.length : 0})
-            </button>
-          </div>
+          <!-- Perkiraan Restock Cerdas Musiman (Redesigned Fintech Card UI) -->
+          <div class="mt-4">
+            <div class="flex items-start gap-2.5 mb-3">
+              <div class="w-9 h-9 rounded-xl bg-blue-500/15 text-blue-500 flex items-center justify-center shrink-0 mt-0.5">
+                ${_SEASONAL_SVG.sparkles}
+              </div>
+              <div class="min-w-0">
+                <h3 class="seasonal-fintech-title text-[15px] font-bold tracking-tight leading-snug">Perkiraan Restock Cerdas Musiman</h3>
+                <p class="seasonal-fintech-muted text-xs mt-0.5 leading-relaxed">Prediksi belanja akurat agar stok siap dan modal tetap efisien</p>
+              </div>
+            </div>
 
-          <div id="seasonal-tab-items-container">
-            ${renderSeasonalTabItems(data)}
+            <div class="flex gap-2 overflow-x-auto pb-1 mb-3" style="scrollbar-width:none;">
+              <button type="button"
+                class="seasonal-fintech-tab ${activeSeasonalTab === 'restock' ? 'active-emerald' : ''} flex-1 min-w-[110px] inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap cursor-pointer transition"
+                onclick="switchSeasonalTab('restock')">
+                ${_SEASONAL_SVG.pkg}
+                <span>Restock (${data.student_restock ? data.student_restock.length : 0})</span>
+              </button>
+              <button type="button"
+                class="seasonal-fintech-tab ${activeSeasonalTab === 'hold' ? 'active-amber' : ''} flex-1 min-w-[110px] inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap cursor-pointer transition"
+                onclick="switchSeasonalTab('hold')">
+                ${_SEASONAL_SVG.pause}
+                <span>Tahan Beli (${data.hold_warnings ? data.hold_warnings.length : 0})</span>
+              </button>
+              <button type="button"
+                class="seasonal-fintech-tab ${activeSeasonalTab === 'staples' ? 'active-emerald' : ''} flex-1 min-w-[110px] inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap cursor-pointer transition"
+                onclick="switchSeasonalTab('staples')">
+                ${_SEASONAL_SVG.shield}
+                <span>Sembako Stabil (${data.stable_staples ? data.stable_staples.length : 0})</span>
+              </button>
+            </div>
+
+            <div id="seasonal-tab-items-container" class="space-y-3">
+              ${renderSeasonalTabItems(data)}
+            </div>
           </div>
         </div>
       `;
@@ -5918,6 +5861,20 @@
       }
     }
 
+    function _renderSeasonalExpandBtn(totalCount, unitLabel) {
+      if (totalCount <= 5) return '';
+      return `
+        <div class="pt-1 text-center">
+          <button type="button"
+            onclick="toggleSeasonalExpanded()"
+            class="seasonal-fintech-tab inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold cursor-pointer transition">
+            ${seasonalExpanded ? _SEASONAL_SVG.chevUp : _SEASONAL_SVG.chevDown}
+            <span>${seasonalExpanded ? 'Ciutkan Tampilan (5 Teratas)' : `Lihat Selengkapnya (+${totalCount - 5} ${unitLabel})`}</span>
+          </button>
+        </div>
+      `;
+    }
+
     function renderSeasonalTabItems(data) {
       if (!data) return '';
       const limit = seasonalExpanded ? 50 : 5;
@@ -5925,128 +5882,377 @@
       if (activeSeasonalTab === 'restock') {
         const items = data.student_restock || [];
         if (!items.length) {
-          return '<div class="pa-skeleton">Tidak ada rekomendasi restock mahasiswa mendesak. Stok saat ini aman.</div>';
+          return '<div class="seasonal-fintech-card rounded-xl p-5 text-center text-xs seasonal-fintech-muted shadow-sm">Tidak ada rekomendasi restock mendesak. Stok saat ini aman.</div>';
         }
-        const hasMore = items.length > 5;
         const visibleItems = items.slice(0, limit);
         return `
-          <div style="margin-bottom:8px; font-size:11px; color:var(--brand-green); font-weight:700;">
-            ⚡ Produk favorit mahasiswa berputar cepat (Mie, Kopi, Air, Rokok, Mandi). Pastikan buffer 14 hari:
+          <div class="seasonal-fintech-banner-emerald rounded-xl px-3.5 py-2.5 text-xs font-medium flex items-center gap-2">
+            ${_SEASONAL_SVG.pkg}
+            <span>Produk favorit mahasiswa berputar cepat. Jaga stok minimal untuk buffer 14 hari.</span>
           </div>
           ${visibleItems.map(item => {
-          const initial = (item.name || 'P').charAt(0).toUpperCase();
-          const imgHtml = item.image_url ? `<img src="${escHtml(item.image_url)}" alt="" />` : initial;
-          const isUrgent = item.priority === 'Mendesak';
-          return `
-              <div class="seasonal-card-item">
-                <div class="seasonal-item-img">${imgHtml}</div>
-                <div class="seasonal-item-info">
-                  <div class="seasonal-item-name">${escHtml(item.name)}</div>
-                  <div class="seasonal-item-meta">
-                    <span>Stok: <b>${item.stock}</b></span>
-                    <span>Laju: <b>${item.daily_velocity_active}/hari</b></span>
-                    <span>Habis: <b>${item.days_cover} hari</b></span>
+            const daysCover = Number(item.days_cover || 0);
+            const stockVal = Number(item.stock || 0);
+            const orderQty = Number(item.suggested_order_qty || 0);
+            const needsOrder = orderQty > 0;
+            const coverPct = stockVal <= 0 ? 0 : Math.max(4, Math.min(100, Math.round((daysCover / 14) * 100)));
+
+            const isUrgent = item.priority === 'Mendesak';
+            const isMed = item.priority === 'Sedang';
+            const badgeClass = isUrgent ? 'seasonal-badge-warn' : (isMed ? 'seasonal-badge-info' : 'seasonal-badge-good');
+            const statusText = isUrgent ? 'Perlu Restock' : (isMed ? 'Pantau Stok' : 'Stok Aman');
+            const barClass = isUrgent ? 'bg-amber-500' : (isMed ? 'bg-blue-500' : 'bg-emerald-500');
+            const coverTextClass = isUrgent ? 'text-amber-500' : (isMed ? 'text-blue-400' : 'text-emerald-500');
+
+            return `
+              <div class="seasonal-fintech-card rounded-xl p-4 shadow-sm transition cursor-pointer" onclick="openProductAnalytics(${item.id})">
+                <div class="flex items-start justify-between gap-3">
+                  <div class="flex items-center gap-3 min-w-0">
+                    <div class="seasonal-fintech-thumb w-11 h-11 rounded-xl flex items-center justify-center shrink-0 overflow-hidden text-sm font-bold">
+                      ${_renderSeasonalThumb(item)}
+                    </div>
+                    <div class="min-w-0">
+                      <h4 class="seasonal-fintech-title text-sm font-semibold truncate leading-snug">${escHtml(item.name)}</h4>
+                      <div class="seasonal-fintech-muted text-[11px] font-medium mt-0.5">${escHtml(item.category || 'Produk Musiman')}</div>
+                    </div>
+                  </div>
+                  <span class="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold ${badgeClass}">
+                    ${isUrgent ? _SEASONAL_SVG.alert : _SEASONAL_SVG.shield}
+                    <span>${statusText}</span>
+                  </span>
+                </div>
+
+                <div class="grid grid-cols-3 gap-2 mt-3.5">
+                  <div class="seasonal-fintech-well rounded-lg px-2.5 py-2">
+                    <div class="seasonal-fintech-muted text-[10px] font-medium uppercase tracking-wider">Stok</div>
+                    <div class="seasonal-fintech-value text-xs font-bold mt-0.5">${stockVal} pcs</div>
+                  </div>
+                  <div class="seasonal-fintech-well rounded-lg px-2.5 py-2">
+                    <div class="seasonal-fintech-muted text-[10px] font-medium uppercase tracking-wider">Laju</div>
+                    <div class="seasonal-fintech-value text-xs font-bold mt-0.5">${item.daily_velocity_active}/hari</div>
+                  </div>
+                  <div class="seasonal-fintech-well rounded-lg px-2.5 py-2">
+                    <div class="seasonal-fintech-muted text-[10px] font-medium uppercase tracking-wider">Habis</div>
+                    <div class="text-xs font-bold mt-0.5 ${coverTextClass}">${daysCover} hari</div>
                   </div>
                 </div>
-                <div style="text-align:right;">
-                  <span class="seasonal-action-pill ${isUrgent ? 'urgent' : 'stable'}">
-                    ${isUrgent ? `⚠️ Pesan +${item.suggested_order_qty} pcs` : '✅ Stok Cukup'}
-                  </span>
-                  <div style="font-size:10px; color:var(--text-sub); margin-top:2px;">Buffer 14 Hari</div>
+
+                <div class="mt-3">
+                  <div class="flex items-center justify-between text-[11px] mb-1.5">
+                    <span class="seasonal-fintech-muted font-medium">Sisa Ketahanan Stok</span>
+                    <span class="seasonal-fintech-sub font-semibold">${daysCover} / 14 hari buffer</span>
+                  </div>
+                  <div class="seasonal-fintech-track w-full h-2 rounded-full overflow-hidden">
+                    <div class="h-full rounded-full transition-all duration-300 ${barClass}" style="width:${coverPct}%"></div>
+                  </div>
+                </div>
+
+                <div class="seasonal-fintech-divider mt-3.5 pt-3 flex items-center justify-between gap-3">
+                  <div>
+                    <div class="seasonal-fintech-muted text-[11px] font-medium">${needsOrder ? 'Rekomendasi Pesan' : 'Status Persediaan'}</div>
+                    <div class="flex items-baseline gap-1 mt-0.5">
+                      <span class="seasonal-fintech-title text-xl font-extrabold tracking-tight">
+                        ${needsOrder ? `+${orderQty}` : 'Cukup'}
+                      </span>
+                      ${needsOrder ? '<span class="seasonal-fintech-muted text-xs font-semibold">pcs</span>' : ''}
+                    </div>
+                  </div>
+                  ${needsOrder ? `
+                    <button type="button"
+                      onclick="event.stopPropagation(); openEditProductModal(${item.id})"
+                      class="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white text-xs font-bold shadow-sm transition cursor-pointer border-0 shrink-0">
+                      ${_SEASONAL_SVG.cartPlus}
+                      <span>Pesan +${orderQty} pcs</span>
+                    </button>
+                  ` : `
+                    <button type="button"
+                      onclick="event.stopPropagation(); openProductAnalytics(${item.id})"
+                      class="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white text-xs font-bold shadow-sm transition cursor-pointer border-0 shrink-0">
+                      ${_SEASONAL_SVG.chart}
+                      <span>Detail Stok</span>
+                    </button>
+                  `}
                 </div>
               </div>
             `;
-        }).join('')}
-          ${hasMore ? `
-            <div style="text-align:center; margin-top:8px;">
-              <button type="button" class="btn-manage-season" onclick="toggleSeasonalExpanded()" style="padding:6px 14px; font-size:11px;">
-                ${seasonalExpanded ? '▴ Ciutkan Tampilan (5 Teratas)' : `▾ Lihat Selengkapnya (+${items.length - 5} rekomendasi)`}
-              </button>
-            </div>
-          ` : ''}
+          }).join('')}
+          ${_renderSeasonalExpandBtn(items.length, 'rekomendasi')}
         `;
       } else if (activeSeasonalTab === 'hold') {
         const items = data.hold_warnings || [];
         if (!items.length) {
-          return '<div class="pa-skeleton">Tidak ada peringatan tahan order. Laju stok seimbang dengan sisa semester.</div>';
+          return '<div class="seasonal-fintech-card rounded-xl p-5 text-center text-xs seasonal-fintech-muted shadow-sm">Tidak ada peringatan tahan order. Laju stok seimbang dengan sisa semester.</div>';
         }
-        const hasMore = items.length > 5;
         const visibleItems = items.slice(0, limit);
         return `
-          <div style="margin-bottom:8px; font-size:11px; color:#fca5a5; font-weight:700;">
-            ⚠️ Peringatan Tahan Order: Stok berikut mencukupi hingga masa libur tiba. Tahan restock agar modal tidak mati!
+          <div class="seasonal-fintech-banner-amber rounded-xl px-3.5 py-2.5 text-xs font-medium flex items-center gap-2">
+            ${_SEASONAL_SVG.pause}
+            <span>Stok produk berikut mencukupi hingga libur tiba. Tahan restock agar modal tetap likuid.</span>
           </div>
           ${visibleItems.map(item => {
-          const initial = (item.name || 'P').charAt(0).toUpperCase();
-          const imgHtml = item.image_url ? `<img src="${escHtml(item.image_url)}" alt="" />` : initial;
-          return `
-              <div class="seasonal-card-item" style="border-color:rgba(239,68,68,0.25); background:rgba(239,68,68,0.03);">
-                <div class="seasonal-item-img" style="background:rgba(239,68,68,0.1); color:#fca5a5;">${imgHtml}</div>
-                <div class="seasonal-item-info">
-                  <div class="seasonal-item-name">${escHtml(item.name)}</div>
-                  <div style="font-size:11px; color:#fca5a5; margin-top:2px;">
-                    ${escHtml(item.action)}
+            const daysCover = Number(item.days_cover || 0);
+            const daysHoliday = Math.max(1, Number(item.days_until_holiday || 1));
+            const coverRatio = Math.min(100, Math.round((daysCover / daysHoliday) * 100));
+            return `
+              <div class="seasonal-fintech-card rounded-xl p-4 shadow-sm transition cursor-pointer" onclick="openProductAnalytics(${item.id})">
+                <div class="flex items-start justify-between gap-3">
+                  <div class="flex items-center gap-3 min-w-0">
+                    <div class="seasonal-fintech-thumb w-11 h-11 rounded-xl flex items-center justify-center shrink-0 overflow-hidden text-sm font-bold">
+                      ${_renderSeasonalThumb(item)}
+                    </div>
+                    <div class="min-w-0">
+                      <h4 class="seasonal-fintech-title text-sm font-semibold truncate leading-snug">${escHtml(item.name)}</h4>
+                      <div class="seasonal-fintech-muted text-[11px] font-medium mt-0.5">${escHtml(item.category || 'Produk Musiman')}</div>
+                    </div>
                   </div>
-                  <div class="seasonal-item-meta" style="margin-top:2px;">
-                    <span>Stok saat ini: <b>${item.stock} pcs</b></span>
-                    <span>Menuju libur: <b>${item.days_until_holiday} hari</b></span>
+                  <span class="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold seasonal-badge-warn">
+                    ${_SEASONAL_SVG.pause}
+                    <span>Tahan Beli</span>
+                  </span>
+                </div>
+
+                <div class="grid grid-cols-3 gap-2 mt-3.5">
+                  <div class="seasonal-fintech-well rounded-lg px-2.5 py-2">
+                    <div class="seasonal-fintech-muted text-[10px] font-medium uppercase tracking-wider">Stok</div>
+                    <div class="seasonal-fintech-value text-xs font-bold mt-0.5">${item.stock} pcs</div>
+                  </div>
+                  <div class="seasonal-fintech-well rounded-lg px-2.5 py-2">
+                    <div class="seasonal-fintech-muted text-[10px] font-medium uppercase tracking-wider">Laju</div>
+                    <div class="seasonal-fintech-value text-xs font-bold mt-0.5">${item.daily_sales || 0}/hari</div>
+                  </div>
+                  <div class="seasonal-fintech-well rounded-lg px-2.5 py-2">
+                    <div class="seasonal-fintech-muted text-[10px] font-medium uppercase tracking-wider">Cukup</div>
+                    <div class="text-xs font-bold mt-0.5 text-amber-500">${daysCover} hari</div>
                   </div>
                 </div>
-                <div style="text-align:right;">
-                  <span class="seasonal-action-pill hold">🛑 TAHAN BELI</span>
-                  <div style="font-size:10px; color:#fcd34d; font-weight:700; margin-top:2px;">Hemat Rp ${(item.capital_tied_up || 0).toLocaleString('id-ID')}</div>
+
+                <div class="mt-3">
+                  <div class="flex items-center justify-between text-[11px] mb-1.5">
+                    <span class="seasonal-fintech-muted font-medium">Ketahanan vs Libur (${daysHoliday} hari)</span>
+                    <span class="seasonal-fintech-sub font-semibold">${coverRatio}%</span>
+                  </div>
+                  <div class="seasonal-fintech-track w-full h-2 rounded-full overflow-hidden">
+                    <div class="h-full rounded-full bg-amber-500 transition-all duration-300" style="width:${coverRatio}%"></div>
+                  </div>
+                </div>
+
+                <div class="seasonal-fintech-divider mt-3.5 pt-3 flex items-center justify-between gap-3">
+                  <div>
+                    <div class="seasonal-fintech-muted text-[11px] font-medium">Modal Dapat Dihemat</div>
+                    <div class="seasonal-fintech-title text-lg font-extrabold tracking-tight mt-0.5">
+                      Rp ${(item.capital_tied_up || 0).toLocaleString('id-ID')}
+                    </div>
+                  </div>
+                  <button type="button"
+                    onclick="event.stopPropagation(); openProductAnalytics(${item.id})"
+                    class="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white text-xs font-bold shadow-sm transition cursor-pointer border-0 shrink-0">
+                    ${_SEASONAL_SVG.chart}
+                    <span>Analisis</span>
+                  </button>
                 </div>
               </div>
             `;
-        }).join('')}
-          ${hasMore ? `
-            <div style="text-align:center; margin-top:8px;">
-              <button type="button" class="btn-manage-season" onclick="toggleSeasonalExpanded()" style="padding:6px 14px; font-size:11px;">
-                ${seasonalExpanded ? '▴ Ciutkan Tampilan (5 Teratas)' : `▾ Lihat Selengkapnya (+${items.length - 5} peringatan)`}
-              </button>
-            </div>
-          ` : ''}
+          }).join('')}
+          ${_renderSeasonalExpandBtn(items.length, 'peringatan')}
         `;
       } else {
         const items = data.stable_staples || [];
         if (!items.length) {
-          return '<div class="pa-skeleton">Tidak ada data sembako pokok stabil.</div>';
+          return '<div class="seasonal-fintech-card rounded-xl p-5 text-center text-xs seasonal-fintech-muted shadow-sm">Tidak ada data sembako pokok stabil.</div>';
         }
-        const hasMore = items.length > 5;
         const visibleItems = items.slice(0, limit);
         return `
-          <div style="margin-bottom:8px; font-size:11px; color:#86efac; font-weight:700;">
-            🏠 Sembako & Bahan Pokok Stabil: Permintaan warga lokal stabil sepanjang tahun (tidak terpengaruh libur mahasiswa).
+          <div class="seasonal-fintech-banner-emerald rounded-xl px-3.5 py-2.5 text-xs font-medium flex items-center gap-2">
+            ${_SEASONAL_SVG.shield}
+            <span>Kebutuhan pokok lokal dengan permintaan konsisten sepanjang tahun.</span>
           </div>
           ${visibleItems.map(item => {
-          const initial = (item.name || 'P').charAt(0).toUpperCase();
-          const imgHtml = item.image_url ? `<img src="${escHtml(item.image_url)}" alt="" />` : initial;
-          return `
-              <div class="seasonal-card-item">
-                <div class="seasonal-item-img">${imgHtml}</div>
-                <div class="seasonal-item-info">
-                  <div class="seasonal-item-name">${escHtml(item.name)}</div>
-                  <div class="seasonal-item-meta">
-                    <span>Aktif: <b>${item.daily_velocity_active}/hari</b></span>
-                    <span>Libur: <b>${item.daily_velocity_break}/hari</b></span>
-                    <span>Stok: <b>${item.stock} pcs</b></span>
+            const stabScore = Math.max(0, Math.min(100, Number(item.stability_score || 0)));
+            return `
+              <div class="seasonal-fintech-card rounded-xl p-4 shadow-sm transition cursor-pointer" onclick="openProductAnalytics(${item.id})">
+                <div class="flex items-start justify-between gap-3">
+                  <div class="flex items-center gap-3 min-w-0">
+                    <div class="seasonal-fintech-thumb w-11 h-11 rounded-xl flex items-center justify-center shrink-0 overflow-hidden text-sm font-bold">
+                      ${_renderSeasonalThumb(item)}
+                    </div>
+                    <div class="min-w-0">
+                      <h4 class="seasonal-fintech-title text-sm font-semibold truncate leading-snug">${escHtml(item.name)}</h4>
+                      <div class="seasonal-fintech-muted text-[11px] font-medium mt-0.5">${escHtml(item.category || 'Sembako')}</div>
+                    </div>
+                  </div>
+                  <span class="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold seasonal-badge-good">
+                    ${_SEASONAL_SVG.shield}
+                    <span>Stabil ${stabScore}%</span>
+                  </span>
+                </div>
+
+                <div class="grid grid-cols-3 gap-2 mt-3.5">
+                  <div class="seasonal-fintech-well rounded-lg px-2.5 py-2">
+                    <div class="seasonal-fintech-muted text-[10px] font-medium uppercase tracking-wider">Stok</div>
+                    <div class="seasonal-fintech-value text-xs font-bold mt-0.5">${item.stock} pcs</div>
+                  </div>
+                  <div class="seasonal-fintech-well rounded-lg px-2.5 py-2">
+                    <div class="seasonal-fintech-muted text-[10px] font-medium uppercase tracking-wider">Aktif</div>
+                    <div class="seasonal-fintech-value text-xs font-bold mt-0.5">${item.daily_velocity_active}/hari</div>
+                  </div>
+                  <div class="seasonal-fintech-well rounded-lg px-2.5 py-2">
+                    <div class="seasonal-fintech-muted text-[10px] font-medium uppercase tracking-wider">Libur</div>
+                    <div class="seasonal-fintech-value text-xs font-bold mt-0.5">${item.daily_velocity_break}/hari</div>
                   </div>
                 </div>
-                <div style="text-align:right;">
-                  <span class="seasonal-action-pill stable">Stabilitas ${item.stability_score}%</span>
-                  <div style="font-size:10px; color:var(--text-sub); margin-top:2px;">Restock Rutin Normal</div>
+
+                <div class="mt-3">
+                  <div class="flex items-center justify-between text-[11px] mb-1.5">
+                    <span class="seasonal-fintech-muted font-medium">Indeks Stabilitas Penjualan</span>
+                    <span class="seasonal-fintech-sub font-semibold">${stabScore}%</span>
+                  </div>
+                  <div class="seasonal-fintech-track w-full h-2 rounded-full overflow-hidden">
+                    <div class="h-full rounded-full bg-emerald-500 transition-all duration-300" style="width:${stabScore}%"></div>
+                  </div>
+                </div>
+
+                <div class="seasonal-fintech-divider mt-3.5 pt-3 flex items-center justify-between gap-3">
+                  <div>
+                    <div class="seasonal-fintech-muted text-[11px] font-medium">Ketahanan Stok</div>
+                    <div class="seasonal-fintech-title text-lg font-extrabold tracking-tight mt-0.5">
+                      ${item.days_cover || 0} <span class="seasonal-fintech-muted text-xs font-semibold">hari</span>
+                    </div>
+                  </div>
+                  <button type="button"
+                    onclick="event.stopPropagation(); openEditProductModal(${item.id})"
+                    class="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white text-xs font-bold shadow-sm transition cursor-pointer border-0 shrink-0">
+                    ${_SEASONAL_SVG.cartPlus}
+                    <span>Atur Stok</span>
+                  </button>
                 </div>
               </div>
             `;
-        }).join('')}
-          ${hasMore ? `
-            <div style="text-align:center; margin-top:8px;">
-              <button type="button" class="btn-manage-season" onclick="toggleSeasonalExpanded()" style="padding:6px 14px; font-size:11px;">
-                ${seasonalExpanded ? '▴ Ciutkan Tampilan (5 Teratas)' : `▾ Lihat Selengkapnya (+${items.length - 5} produk)`}
-              </button>
-            </div>
-          ` : ''}
+          }).join('')}
+          ${_renderSeasonalExpandBtn(items.length, 'produk')}
         `;
+      }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // ANALISIS JAM SIBUK (PEAK HOURS) — BAR CHART (30 HARI TERAKHIR)
+    // ══════════════════════════════════════════════════════════════════════
+    let peakHoursChart = null;
+    let peakHoursData = null;
+
+    function renderPeakChartInstance(canvasId, oldChart, data) {
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) return null;
+      const hours = data.hours || [];
+      const busiest = data.busiest_hour || {};
+      const totalTrx = data.total_transactions || 0;
+
+      const labels = hours.map(h => h.label);
+      const counts = hours.map(h => h.count);
+      const revenues = hours.map(h => h.revenue);
+
+      const barColors = hours.map(h => {
+        if (totalTrx > 0 && h.hour === busiest.hour) {
+          return '#22c55e'; // Bright green for peak
+        }
+        return 'rgba(56, 189, 248, 0.65)'; // Soft cyan for regular
+      });
+
+      const barBorderColors = hours.map(h => {
+        if (totalTrx > 0 && h.hour === busiest.hour) {
+          return '#4ade80';
+        }
+        return '#38bdf8';
+      });
+
+      if (oldChart) {
+        oldChart.destroy();
+      }
+
+      const ctx = canvas.getContext('2d');
+      return new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Jumlah Transaksi',
+            data: counts,
+            backgroundColor: barColors,
+            borderColor: barBorderColors,
+            borderWidth: 1.5,
+            borderRadius: 4,
+            maxBarThickness: 16
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          layout: { padding: { top: 12 } },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: 'rgba(15, 23, 42, 0.94)',
+              titleColor: '#fff',
+              bodyColor: '#cbd5e1',
+              borderColor: 'rgba(255, 255, 255, 0.12)',
+              borderWidth: 1,
+              padding: 10,
+              callbacks: {
+                title: (items) => `Pukul ${items[0].label}`,
+                label: (c) => {
+                  const idx = c.dataIndex;
+                  const rev = revenues[idx] || 0;
+                  return [`Transaksi: ${c.raw} struk`, `Omzet: ${fmtRp(rev)}`];
+                }
+              }
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              grid: { color: 'rgba(255,255,255,0.06)' },
+              ticks: { color: '#94a3b8', font: { size: 10 }, precision: 0 }
+            },
+            x: {
+              grid: { display: false },
+              ticks: {
+                color: '#94a3b8',
+                font: { size: 9 },
+                maxRotation: 45,
+                minRotation: 0,
+                callback: function(val, index) {
+                  return (index % 2 === 0) ? this.getLabelForValue(val) : '';
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    async function loadPeakHoursChart() {
+      try {
+        const res = await fetch(`${API_BASE}/api/mini/peak-hours?tenant_id=${activeTenantId}&days=30`, { headers });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        peakHoursData = await res.json();
+        const data = peakHoursData;
+
+        const busiest = data.busiest_hour || {};
+        const totalTrx = data.total_transactions || 0;
+
+        const badgeText = totalTrx > 0 ? `🔥 Jam Teramai: ${busiest.label} (${busiest.period_name})` : 'ℹ️ Belum Ada Data Transaksi';
+        const insightHtml = totalTrx > 0 ?
+          `💡 <b>Puncak Kunjungan Toko:</b> Terjadi pada pukul <b>${busiest.label} (${busiest.period_name})</b> dengan total <b>${busiest.count} transaksi</b> (dari total ${totalTrx.toLocaleString('id-ID')} transaksi dalam 30 hari terakhir). Disarankan memastikan kasir siap dan uang kembalian tersedia optimal di rentang jam tersebut.` :
+          `💡 <b>Belum ada data transaksi:</b> Grafik akan otomatis terbentuk seiring transaksi kasir tercatat untuk menganalisis jam operasional paling ramai.`;
+
+        const peakBadge = document.getElementById('peak-hour-badge');
+        if (peakBadge) peakBadge.textContent = badgeText;
+
+        const peakInsight = document.getElementById('peak-hours-insight');
+        if (peakInsight) peakInsight.innerHTML = insightHtml;
+
+        peakHoursChart = renderPeakChartInstance('peak-hours-canvas', peakHoursChart, data);
+      } catch (err) {
+        console.warn('Gagal memuat chart jam sibuk:', err);
       }
     }
 
@@ -6254,6 +6460,7 @@
       try { await loadOnlineOrders(); } catch (e) { console.error('loadOnlineOrders failed:', e); }
       try { await loadRecentPosTransactions(); } catch (e) { console.error('loadRecentPosTransactions failed:', e); }
       try { await loadStoreQrisData(); } catch (e) { console.error('loadStoreQrisData failed:', e); }
+      try { await loadPeakHoursChart(); } catch (e) { console.error('loadPeakHoursChart failed:', e); }
 
       // Check URL query parameters (e.g. ?tab=stok&action=ocr atau ?action=excel)
       const urlParams = new URLSearchParams(window.location.search);
@@ -6286,6 +6493,8 @@
             loadDashboardData();
             loadProductAnalyticsList();
             loadSeasonalAnalytics();
+            loadPeakHoursChart();
+            renderVariantC();
           }
           if (btn.dataset.tab === 'stok') loadStockChart();
           if (btn.dataset.tab === 'qris') loadStoreQrisData();
@@ -6867,7 +7076,7 @@
           currentPosInvoice = data.invoice_no;
           posCart = {};
           renderPosCart();
-          alert(`✅ Transaksi ${data.invoice_no} berhasil dicatat!\nStok barang telah otomatis dipotong.`);
+          alert(`✅ Transaksi ${formatInvoiceCode(data.invoice_no)} berhasil dicatat!\nStok barang telah otomatis dipotong.`);
           await loadDashboardData();
           await loadRecentPosTransactions();
           await loadPosCatalog();
@@ -6902,7 +7111,7 @@
             <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-card); border-radius:10px; padding:10px 12px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; gap:8px;">
               <div style="flex-grow:1; min-width:0;">
                 <div style="display:flex; align-items:center; gap:6px;">
-                  <span style="font-weight:800; font-size:12.5px; font-family:'SFMono-Regular', Consolas, monospace; letter-spacing:0.4px; ${isVoid ? 'text-decoration:line-through; color:var(--text-dim);' : ''}">${formatInvoiceCode(t.invoice_no)}</span>
+                  <span style="font-weight:800; font-size:12.5px; font-family:'SFMono-Regular', Consolas, monospace; letter-spacing:0.4px; ${isVoid ? 'text-decoration:line-through; color:var(--text-dim);' : ''}">${formatInvoiceCode(t.invoice_no, t.created_at)}</span>
                   ${isVoid ? `<span style="font-size:10px; padding:2px 6px; border-radius:10px; background:rgba(239,68,68,0.2); color:var(--danger); font-weight:700;">BATAL</span>` : ''}
                 </div>
                 <div style="font-size:11px; color:var(--text-sub); margin-top:2px; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
@@ -6917,11 +7126,11 @@
                   Struk
                 </button>
                 ${!isVoid ? `
-                  <button style="background:rgba(239,68,68,0.15); border:1px solid var(--danger); color:var(--danger); border-radius:6px; padding:6px 12px; font-size:11px; font-weight:700; cursor:pointer;" onclick="voidPosTransaction('${t.invoice_no}')">
+                  <button style="background:rgba(239,68,68,0.15); border:1px solid var(--danger); color:var(--danger); border-radius:6px; padding:6px 12px; font-size:11px; font-weight:700; cursor:pointer;" onclick="voidPosTransaction('${t.invoice_no}', '${t.created_at}')">
                     Batalkan
                   </button>
                 ` : `
-                  <button style="background:rgba(34,197,94,0.15); border:1px solid var(--brand-green); color:var(--brand-green); border-radius:6px; padding:6px 12px; font-size:11px; font-weight:700; cursor:pointer;" onclick="restorePosTransaction('${t.invoice_no}')" title="Pulihkan transaksi dan ambil stok kembali">
+                  <button style="background:rgba(34,197,94,0.15); border:1px solid var(--brand-green); color:var(--brand-green); border-radius:6px; padding:6px 12px; font-size:11px; font-weight:700; cursor:pointer;" onclick="restorePosTransaction('${t.invoice_no}', '${t.created_at}')" title="Pulihkan transaksi dan ambil stok kembali">
                     Pulihkan
                   </button>
                 `}
@@ -6934,8 +7143,8 @@
       }
     }
 
-    async function voidPosTransaction(inv) {
-      if (!confirm(`Batalkan transaksi ${inv}?\n\nSemua stok produk dari transaksi ini akan dikembalikan otomatis ke sistem.`)) return;
+    async function voidPosTransaction(inv, createdAt) {
+      if (!confirm(`Batalkan transaksi ${formatInvoiceCode(inv, createdAt)}?\n\nSemua stok produk dari transaksi ini akan dikembalikan otomatis ke sistem.`)) return;
       try {
         const res = await fetch(`${API_BASE}/api/pos/transactions/${inv}/void`, { method: 'POST' });
         const data = await res.json();
@@ -6952,8 +7161,8 @@
       }
     }
 
-    async function restorePosTransaction(inv) {
-      if (!confirm(`Pulihkan transaksi ${inv}?\n\nStok produk dari transaksi ini akan otomatis dipotong (keambil) kembali.`)) return;
+    async function restorePosTransaction(inv, createdAt) {
+      if (!confirm(`Pulihkan transaksi ${formatInvoiceCode(inv, createdAt)}?\n\nStok produk dari transaksi ini akan otomatis dipotong (keambil) kembali.`)) return;
       try {
         const res = await fetch(`${API_BASE}/api/pos/transactions/${inv}/restore`, { method: 'POST' });
         const data = await res.json();
@@ -7027,13 +7236,38 @@
       document.getElementById('receipt-modal').classList.remove('active');
     }
 
-    // Format kode transaksi dari TRX-YYYYMMDD-XXXX menjadi #DDMM-XXXX (contoh: #0611-1022)
-    function formatInvoiceCode(inv) {
+    // Format kode transaksi menjadi #DDMM-XXXX (contoh: #0611-1022)
+    function formatInvoiceCode(inv, createdAt) {
       if (!inv) return '-';
-      const m = String(inv).match(/^TRX-(\d{4})(\d{2})(\d{2})-(\d+)$/i);
+      const raw = String(inv).trim();
+
+      // 1. TRX-YYYYMMDD-XXXX -> #DDMM-XXXX
+      let m = raw.match(/^TRX-(\d{4})(\d{2})(\d{2})-(\d+)$/i);
       if (m) {
         return `#${m[3]}${m[2]}-${m[4]}`;
       }
+
+      // 2. INV-YYMMDD-XXXX -> #DDMM-XXXX
+      m = raw.match(/^INV-(\d{2})(\d{2})(\d{2})-(\d+)$/i);
+      if (m) {
+        return `#${m[3]}${m[2]}-${m[4]}`;
+      }
+
+      // 3. Legacy INV-XXXXXX / INV-QC-XXXXXX -> #DDMM-XXXX menggunakan createdAt
+      m = raw.match(/^INV-(?:QC-)?(\d+)$/i);
+      if (m) {
+        let ddmm = '';
+        if (createdAt) {
+          const dm = String(createdAt).match(/^(\d{2})\/(\d{2})\/\d{4}/)
+            || String(createdAt).match(/^\d{4}-(\d{2})-(\d{2})/);
+          if (dm) {
+            ddmm = String(createdAt).includes('/') ? `${dm[1]}${dm[2]}` : `${dm[2]}${dm[1]}`;
+          }
+        }
+        const seq4 = String(Number(m[1])).slice(-4).padStart(4, '0');
+        return ddmm ? `#${ddmm}-${seq4}` : `#${seq4}`;
+      }
+
       return inv;
     }
 
@@ -7083,7 +7317,7 @@
       container.innerHTML = orders.map(o => {
         const items = o.items || [];
         const totalPcs = items.reduce((sum, it) => sum + (Number(it.qty) || 1), 0);
-        const displayCode = formatInvoiceCode(o.invoice_no);
+        const displayCode = formatInvoiceCode(o.invoice_no, o.created_at);
 
         if (isGrid) {
           // Tampilan Grid 2 Kolom: Ringkas tanpa nama barang, hanya total barang & kuantitas
@@ -7602,44 +7836,11 @@
       }
     }
 
-    // ════ VARIATION LOGIC (Varian A, B, C) ════
-    let currentRingkasanVariant = localStorage.getItem('ringkasan_variant') || 'c';
+    // ════ LAPORAN TOKO STATE & EKSPOR ════
     let financialLedgerData = null;
     let varCSortColumn = 'rank';
     let varCSortAsc = true;
-
-    const VARIANT_DESCRIPTIONS = {
-      'a': '<b>Varian A (Segmen Tab):</b> Informasi dipisah ke dalam 3 sub-halaman fokus (Ikhtisar, Musim Kuliah, Detail Produk) agar tidak menumpuk.',
-      'b': '<b>Varian B (Aksi Cepat):</b> Dirancang untuk keputusan harian instan saat toko ramai. Langsung menampilkan apa yang perlu dibeli, diobral, dan kondisi kas.',
-      'c': '<b>Varian C (Ledger & Audit):</b> Dirancang untuk audit mendalam. Menyajikan buku kas multi-periode, tabel matriks 35 SKU dengan runway stok, dan kalender 16 minggu.'
-    };
-
-    function switchRingkasanVariant(variant) {
-      currentRingkasanVariant = variant;
-      localStorage.setItem('ringkasan_variant', variant);
-
-      // Update button active states
-      ['a', 'b', 'c'].forEach(v => {
-        const btn = document.getElementById('btn-var-' + v);
-        if (btn) btn.classList.toggle('active', v === variant);
-        const panel = document.getElementById('view-variant-' + v);
-        if (panel) {
-          panel.style.display = (v === variant) ? 'block' : 'none';
-          panel.classList.toggle('active', v === variant);
-        }
-      });
-
-      // Update description text
-      const descEl = document.getElementById('variant-desc-text');
-      if (descEl) descEl.innerHTML = VARIANT_DESCRIPTIONS[variant] || '';
-
-      // Trigger respective renderer
-      if (variant === 'b') {
-        renderVariantB();
-      } else if (variant === 'c') {
-        renderVariantC();
-      }
-    }
+    let financialLedgerMarginPct = 18;
 
     async function loadFinancialLedger() {
       try {
@@ -7647,7 +7848,7 @@
         if (res.ok) {
           const data = await res.json();
           financialLedgerData = data.ledger || [];
-          if (currentRingkasanVariant === 'b') renderVariantB();
+          financialLedgerMarginPct = data.margin_pct || 18;
           renderVarCFinancialTable();
         }
       } catch (e) {
@@ -7655,159 +7856,189 @@
       }
     }
 
-    function renderVariantB() {
-      if (!paItems.length && !financialLedgerData) return;
-
-      // 1. Metric ribbon
-      if (financialLedgerData) {
-        const todayRow = financialLedgerData.find(r => r.key === 'today') || {};
-        const d30Row = financialLedgerData.find(r => r.key === 'last_30d') || {};
-
-        const todayRevEl = document.getElementById('var-b-today-rev');
-        const todayTrxEl = document.getElementById('var-b-today-trx');
-        const avgBasketEl = document.getElementById('var-b-avg-basket');
-        const rev30El = document.getElementById('var-b-30d-rev');
-        const trx30El = document.getElementById('var-b-30d-trx');
-
-        if (todayRevEl) todayRevEl.textContent = fmtRp(todayRow.net_revenue || 0);
-        if (todayTrxEl) todayTrxEl.textContent = `${todayRow.trx_count || 0} transaksi`;
-        if (avgBasketEl) avgBasketEl.textContent = fmtRp(todayRow.avg_basket || 0);
-        if (rev30El) rev30El.textContent = fmtRp(d30Row.net_revenue || 0);
-        if (trx30El) trx30El.textContent = `${d30Row.trx_count || 0} transaksi total`;
+    function setReportExportStatus(message, color = 'var(--text-sub)') {
+      const statusEl = document.getElementById('report-export-status');
+      if (!statusEl) return;
+      if (!message) {
+        statusEl.style.display = 'none';
+        statusEl.textContent = '';
+        return;
       }
-
-      // 2. Action Card: Kulakan Mendesak (Stok Kritis / Runway Rendah)
-      const restockEl = document.getElementById('var-b-restock-list');
-      const restockCountEl = document.getElementById('var-b-restock-count');
-      if (restockEl && paItems.length) {
-        const criticalItems = paItems.filter(i => {
-          const rw = i.days_cover;
-          return (rw !== null && rw !== undefined && rw < 3) || ['Kritis', 'Habis', 'Menipis'].includes(i.stock_label);
-        }).sort((a, b) => (a.days_cover || 0) - (b.days_cover || 0));
-
-        if (restockCountEl) restockCountEl.textContent = criticalItems.length;
-
-        if (!criticalItems.length) {
-          restockEl.innerHTML = '<div style="padding:10px 0; color:var(--text-sub); font-size:12px;">✅ Semua stok aman, belum ada barang krisis.</div>';
-        } else {
-          restockEl.innerHTML = criticalItems.slice(0, 4).map(item => `
-            <div class="action-item-row" onclick="openProductAnalytics(${item.id})">
-              <div>
-                <div class="action-item-name">${escHtml(item.name)}</div>
-                <div class="action-item-meta">Stok: <b>${item.stock}</b> · Laju: ~${item.avg_daily || 0}/hari</div>
-              </div>
-              <div style="text-align:right;">
-                <span class="action-item-tag danger">Sisa ${item.days_cover !== null ? item.days_cover.toFixed(1) + ' hari' : item.stock_label}</span>
-                <div style="font-size:10px; color:var(--brand-green); margin-top:2px;">Ketuk Detail ›</div>
-              </div>
-            </div>
-          `).join('');
-        }
-      }
-
-      // 3. Action Card: Dead Stock / Modal Tertahan
-      const slowEl = document.getElementById('var-b-slow-list');
-      const slowCountEl = document.getElementById('var-b-slow-count');
-      if (slowEl && paItems.length) {
-        const slowItems = paItems.filter(i => i.class === 'Tidak Terjual' || (i.qty_30d || 0) === 0 || i.class === 'Lambat');
-        if (slowCountEl) slowCountEl.textContent = slowItems.length;
-
-        if (!slowItems.length) {
-          slowEl.innerHTML = '<div style="padding:10px 0; color:var(--text-sub); font-size:12px;">✅ Tidak ada barang macet, seluruh barang bergerak aktif.</div>';
-        } else {
-          slowEl.innerHTML = slowItems.slice(0, 3).map(item => `
-            <div class="action-item-row" onclick="openProductAnalytics(${item.id})">
-              <div>
-                <div class="action-item-name">${escHtml(item.name)}</div>
-                <div class="action-item-meta">Stok: ${item.stock} · Terjual 30h: <b>${item.qty_30d || 0} pcs</b></div>
-              </div>
-              <div style="text-align:right;">
-                <span class="action-item-tag warn">Disarankan Obral</span>
-                <div style="font-size:10.5px; color:var(--text-sub); margin-top:2px;">${fmtRp(item.price || 0)}</div>
-              </div>
-            </div>
-          `).join('');
-        }
-      }
-
-      // 4. Distribusi Omzet per Kategori
-      const catBarsEl = document.getElementById('var-b-cat-bars');
-      if (catBarsEl && paItems.length) {
-        const catMap = {};
-        let totalRev = 0;
-        paItems.forEach(p => {
-          const cat = p.category || 'Lainnya';
-          const rev = p.revenue_30d || 0;
-          catMap[cat] = (catMap[cat] || 0) + rev;
-          totalRev += rev;
-        });
-
-        const catList = Object.entries(catMap).sort((a, b) => b[1] - a[1]);
-        catBarsEl.innerHTML = catList.map(([cat, rev]) => {
-          const pct = totalRev > 0 ? ((rev / totalRev) * 100).toFixed(1) : 0;
-          return `
-            <div style="margin-bottom:8px;">
-              <div style="display:flex; justify-content:space-between; font-size:11.5px; margin-bottom:3px;">
-                <span style="font-weight:700; color:var(--text-white);">${escHtml(cat)}</span>
-                <span style="color:var(--text-sub);">${fmtRp(rev)} <b style="color:var(--brand-green);">(${pct}%)</b></span>
-              </div>
-              <div style="background:rgba(255,255,255,0.06); height:6px; border-radius:3px; overflow:hidden;">
-                <div style="background:var(--brand-green); width:${pct}%; height:100%; border-radius:3px;"></div>
-              </div>
-            </div>
-          `;
-        }).join('');
-      }
-
-      // 5. Top 5 Produk Cepat
-      const top5El = document.getElementById('var-b-top5-list');
-      if (top5El && paItems.length) {
-        const top5 = [...paItems].sort((a, b) => (b.qty_30d || 0) - (a.qty_30d || 0)).slice(0, 5);
-        top5El.innerHTML = top5.map((item, idx) => `
-          <div class="action-item-row" onclick="openProductAnalytics(${item.id})">
-            <div style="display:flex; align-items:center; gap:8px;">
-              <span style="font-size:11px; font-weight:800; color:var(--text-sub); width:18px;">#${idx + 1}</span>
-              <div>
-                <div class="action-item-name">${escHtml(item.name)}</div>
-                <div class="action-item-meta">${escHtml(item.category)} · Laju: <b>${item.avg_daily || (item.qty_30d / 30).toFixed(1)} pcs/hari</b></div>
-              </div>
-            </div>
-            <div style="text-align:right;">
-              <div style="font-weight:800; font-size:12px; color:var(--text-white);">${item.qty_30d} pcs</div>
-              <div style="font-size:10.5px; color:var(--brand-green);">${fmtRp(item.revenue_30d || 0)}</div>
-            </div>
-          </div>
-        `).join('');
-      }
+      statusEl.style.display = 'block';
+      statusEl.style.color = color;
+      statusEl.textContent = message;
     }
 
-    function copyRestockList() {
-      if (!paItems.length) {
-        alert('Data belum siap.');
-        return;
+    function parseExportFilename(disposition, fallbackName) {
+      if (!disposition) return fallbackName;
+      const utf8Match = disposition.match(/filename\*=UTF-8''([^;\n]+)/i);
+      if (utf8Match && utf8Match[1]) {
+        try { return decodeURIComponent(utf8Match[1]); } catch (_) { }
       }
-      const criticalItems = paItems.filter(i => {
-        const rw = i.days_cover;
-        return (rw !== null && rw !== undefined && rw < 3) || ['Kritis', 'Habis', 'Menipis'].includes(i.stock_label);
-      }).sort((a, b) => (a.days_cover || 0) - (b.days_cover || 0));
+      const basicMatch = disposition.match(/filename="?([^";\n]+)"?/i);
+      return (basicMatch && basicMatch[1]) ? basicMatch[1] : fallbackName;
+    }
 
-      if (!criticalItems.length) {
-        alert('Tidak ada barang berstatus krisis saat ini.');
-        return;
+    let lastReportBlobUrl = null;
+
+    function buildDirectReportUrl(period) {
+      const directParams = new URLSearchParams({
+        format: 'xlsx',
+        period,
+        tenant_id: String(activeTenantId),
+        'ngrok-skip-browser-warning': 'true',
+      });
+      if (tg?.initData) {
+        directParams.set('init_data', tg.initData);
+      } else {
+        directParams.set('role', currentRole);
       }
+      return `${API_BASE}/api/mini/report/export?${directParams.toString()}`;
+    }
 
-      let text = "📋 *DAFTAR KULAKAN MENDESAK - TOKO CIAMIS*\n";
-      text += `Tanggal: ${new Date().toLocaleDateString('id-ID')}\n\n`;
-      criticalItems.forEach((it, idx) => {
-        text += `${idx + 1}. ${it.name}\n   - Sisa Stok: ${it.stock} pcs\n   - Estimasi Habis: ${it.days_cover !== null ? it.days_cover.toFixed(1) + ' hari' : it.stock_label}\n`;
-      });
-      text += "\nMohon segera diproses ke sales/grosir.";
+    async function downloadStoreReport() {
+      const periodSelect = document.getElementById('report-export-period');
+      const period = periodSelect ? periodSelect.value : '30d';
+      const btn = document.getElementById('btn-export-report-xlsx');
+      const origHtml = btn ? btn.innerHTML : '';
 
-      navigator.clipboard.writeText(text).then(() => {
-        alert('✅ Daftar kulakan berhasil disalin ke clipboard! Silakan paste ke WhatsApp.');
-      }).catch(() => {
-        alert(text);
-      });
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = '⏳ Memproses...';
+      }
+      setReportExportStatus('Menyiapkan laporan Excel (.xlsx)...', 'var(--text-sub)');
+
+      try {
+        const directUrl = buildDirectReportUrl(period);
+        const inTelegram = Boolean(tg && (tg.initData || (tg.platform && tg.platform !== 'unknown')));
+
+        // Di dalam Telegram Mini App (Desktop / Mobile / Web), WebView sering memblokir
+        // <a download="blob:...">, jadi kirim file .xlsx langsung ke chat Telegram via Bot
+        // serta sediakan opsi buka di browser eksternal.
+        if (inTelegram) {
+          try {
+            const tgRes = await fetch(
+              `${API_BASE}/api/mini/report/send-telegram?period=${encodeURIComponent(period)}&tenant_id=${encodeURIComponent(String(activeTenantId))}`,
+              { method: 'POST', headers }
+            );
+            if (tgRes.ok) {
+              const tgJson = await tgRes.json();
+              const fname = tgJson?.filename || `laporan_toko_${period}.xlsx`;
+              const statusEl = document.getElementById('report-export-status');
+              if (statusEl) {
+                statusEl.style.display = 'block';
+                statusEl.style.color = 'var(--brand-green)';
+                statusEl.innerHTML = '';
+                statusEl.appendChild(document.createTextNode(`✅ ${fname} dikirim ke chat Telegram Anda. `));
+                if (typeof tg.openLink === 'function' && /^https?:\/\//i.test(directUrl)) {
+                  const link = document.createElement('a');
+                  link.href = '#';
+                  link.textContent = 'Unduh via browser';
+                  link.style.color = '#38bdf8';
+                  link.style.textDecoration = 'underline';
+                  link.onclick = (e) => {
+                    e.preventDefault();
+                    tg.openLink(directUrl);
+                  };
+                  statusEl.appendChild(link);
+                }
+              }
+              if (
+                typeof tg.downloadFile === 'function'
+                && (!tg.isVersionAtLeast || tg.isVersionAtLeast('8.0'))
+                && /^https:\/\//i.test(directUrl)
+                && !/ngrok/i.test(window.location.hostname)
+              ) {
+                tg.downloadFile({ url: directUrl, file_name: fname });
+              }
+              return;
+            }
+          } catch (_) {
+            // Lanjut ke fallback WebApp / browser di bawah
+          }
+        }
+
+        const apiUrl = `${API_BASE}/api/mini/report/export?format=xlsx&period=${encodeURIComponent(period)}&tenant_id=${encodeURIComponent(String(activeTenantId))}`;
+        const defaultName = `laporan_toko_${period}.xlsx`;
+
+        const res = await fetch(apiUrl, { method: 'GET', headers });
+        if (!res.ok) {
+          let errMsg = `HTTP ${res.status}`;
+          try {
+            const errJson = await res.json();
+            if (errJson?.detail) errMsg = errJson.detail;
+          } catch (_) { }
+          throw new Error(errMsg);
+        }
+
+        const filename = parseExportFilename(res.headers.get('Content-Disposition'), defaultName);
+        const blob = await res.blob();
+
+        if (inTelegram) {
+          if (
+            typeof tg.downloadFile === 'function'
+            && (!tg.isVersionAtLeast || tg.isVersionAtLeast('8.0'))
+            && /^https:\/\//i.test(directUrl)
+            && !/ngrok/i.test(window.location.hostname)
+          ) {
+            tg.downloadFile({ url: directUrl, file_name: filename }, (accepted) => {
+              if (accepted === false) {
+                setReportExportStatus('Unduhan dibatalkan.', 'var(--text-sub)');
+              } else {
+                setReportExportStatus(`✅ Mengunduh ${filename}`, 'var(--brand-green)');
+              }
+            });
+            return;
+          }
+          if (typeof tg.openLink === 'function' && /^https?:\/\//i.test(directUrl)) {
+            tg.openLink(directUrl);
+            setReportExportStatus(`✅ Membuka unduhan ${filename} di browser.`, 'var(--brand-green)');
+            return;
+          }
+        }
+
+        if (lastReportBlobUrl) {
+          try { URL.revokeObjectURL(lastReportBlobUrl); } catch (_) { }
+        }
+        const blobUrl = URL.createObjectURL(blob);
+        lastReportBlobUrl = blobUrl;
+
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = filename;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+          try { a.remove(); } catch (_) { }
+        }, 5000);
+
+        const statusEl = document.getElementById('report-export-status');
+        if (statusEl) {
+          statusEl.style.display = 'block';
+          statusEl.style.color = 'var(--brand-green)';
+          statusEl.innerHTML = '';
+          statusEl.appendChild(document.createTextNode(`✅ ${filename} siap. Jika belum terunduh, `));
+          const manualLink = document.createElement('a');
+          manualLink.href = directUrl;
+          manualLink.download = filename;
+          manualLink.target = '_blank';
+          manualLink.rel = 'noopener';
+          manualLink.textContent = 'klik di sini';
+          manualLink.style.color = '#38bdf8';
+          manualLink.style.textDecoration = 'underline';
+          statusEl.appendChild(manualLink);
+          statusEl.appendChild(document.createTextNode('.'));
+        }
+      } catch (err) {
+        console.error('Gagal mengunduh laporan:', err);
+        setReportExportStatus(`❌ Gagal mengunduh: ${err.message || 'kesalahan server'}`, '#ef4444');
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          if (origHtml) btn.innerHTML = origHtml;
+        }
+      }
     }
 
     // ════ VARIAN C RENDERERS ════
@@ -7815,11 +8046,18 @@
       renderVarCFinancialTable();
       renderVarCMasterTable();
       renderVarCTimeline();
+      if (seasonalData && seasonalData.macro_comparison) {
+        updateMacroRevBoxes(seasonalData.macro_comparison);
+      }
     }
 
     function renderVarCFinancialTable() {
       const tbody = document.getElementById('var-c-financial-body');
       if (!tbody) return;
+
+      const profHeader = document.getElementById('var-c-profit-header');
+      const marginPct = financialLedgerMarginPct || 18;
+      if (profHeader) profHeader.textContent = `Est. Laba (${marginPct}%)`;
 
       if (!financialLedgerData) {
         tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:16px;">Memuat data buku besar...</td></tr>';
@@ -7854,13 +8092,17 @@
     function renderVarCMasterTable() {
       const tbody = document.getElementById('var-c-master-body');
       const countEl = document.getElementById('var-c-sku-count');
-      if (!tbody || !paItems.length) return;
+      const titleEl = document.getElementById('var-c-sku-title');
       if (!tbody) return;
-      if (!paItems.length) {
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:24px; color:var(--text-dim); font-size:12.5px;">Belum ada master SKU produk di toko ini.</td></tr>';
+
+      if (!paItems || !paItems.length) {
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:24px; color:var(--text-dim); font-size:12.5px;">Belum ada master SKU produk di toko ini.</td></tr>';
         if (countEl) countEl.textContent = '0 Produk';
+        if (titleEl) titleEl.textContent = 'Matriks 0 SKU & Runway Inventaris';
         return;
       }
+
+      if (titleEl) titleEl.textContent = `Matriks ${paItems.length} SKU & Runway Inventaris`;
 
       const q = (document.getElementById('var-c-search')?.value || '').toLowerCase().trim();
       const cat = document.getElementById('var-c-cat-filter')?.value || 'all';

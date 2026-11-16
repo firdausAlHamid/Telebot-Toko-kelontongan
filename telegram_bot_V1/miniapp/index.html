@@ -96,6 +96,42 @@
       color: var(--text-white);
     }
 
+    /* ── Mode Data Switcher Sederhana (Simulasi vs Toko Asli) ── */
+    .mode-seg-control {
+      display: flex;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-card);
+      border-radius: 8px;
+      padding: 3px;
+      gap: 3px;
+      margin-bottom: 12px;
+    }
+
+    .mode-seg-btn {
+      flex: 1;
+      border: none;
+      background: transparent;
+      color: var(--text-dim, #94a3b8);
+      font-size: 12px;
+      font-weight: 600;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-align: center;
+    }
+
+    .mode-seg-btn:hover {
+      color: #ffffff;
+    }
+
+    .mode-seg-btn.active {
+      background: #334155;
+      color: #ffffff;
+      font-weight: 700;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+
     .header-actions-row {
       display: flex;
       align-items: center;
@@ -684,26 +720,39 @@
 
     .qris-card-box {
       background: #172333; border: 1px solid var(--border-card); border-radius: 22px;
-      padding: 24px 20px; max-width: 340px; width: 100%; text-align: center;
+      padding: 22px 18px; max-width: 350px; width: 100%; text-align: center;
       box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
     }
 
+    .qris-switch-btn {
+      color: var(--text-sub);
+      background: transparent;
+      transition: all 0.2s ease;
+    }
+
+    .qris-switch-btn.active {
+      background: #334155 !important;
+      color: #ffffff !important;
+      font-weight: 700 !important;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+
     .qris-qr-image-wrap {
-      background: #ffffff; border-radius: 14px; padding: 12px; margin: 14px auto;
-      max-width: 220px; width: 100%; display: flex; align-items: center; justify-content: center;
+      background: #ffffff; border-radius: 14px; padding: 12px; margin: 12px auto;
+      max-width: 230px; width: 100%; display: flex; align-items: center; justify-content: center;
     }
 
     .qris-qr-img {
-      width: 100%; height: auto; max-height: 196px; object-fit: contain;
+      width: 100%; height: auto; max-height: 210px; object-fit: contain;
     }
 
     .qris-amount-badge {
-      background: rgba(34, 197, 94, 0.15); border: 1px solid var(--brand-green);
+      background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25);
       border-radius: var(--radius-md); padding: 8px 14px; margin-bottom: 12px;
     }
 
     .qris-amount-val {
-      font-size: 22px; font-weight: 800; color: var(--brand-green);
+      font-size: 22px; font-weight: 800; color: #38bdf8;
     }
 
     .qris-timer-text {
@@ -785,6 +834,14 @@
       <span id="clock-display">00:00:00 WIB</span>
     </div>
     <div class="header-name" id="user-greeting-cust">Selamat Datang!</div>
+
+    <!-- ── Mode Data Switcher Sederhana (Simulasi vs Toko Asli) ── -->
+    <div class="mode-seg-control" id="data-mode-bar">
+      <button type="button" class="mode-seg-btn active" id="btn-mode-simulasi"
+        onclick="switchDataMode('simulasi')">Simulasi</button>
+      <button type="button" class="mode-seg-btn" id="btn-mode-asli"
+        onclick="switchDataMode('asli')">Toko Asli</button>
+    </div>
     
     <div class="header-actions-row">
       <!-- Tombol Riwayat / Histori Pesanan Pelanggan -->
@@ -926,17 +983,21 @@
 
       <!-- Metode Pembayaran: Khusus QRIS untuk Pembelian Mandiri Online -->
       <label class="form-field-label">Metode Pembayaran</label>
-      <div style="background: rgba(34, 197, 94, 0.08); border: 1.5px solid var(--brand-green); border-radius: var(--radius-md); padding: 12px; display: flex; align-items: center; gap: 12px; margin-bottom: 14px;">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--brand-green); flex-shrink:0;">
-          <rect x="3" y="3" width="7" height="7"></rect>
-          <rect x="14" y="3" width="7" height="7"></rect>
-          <rect x="14" y="14" width="7" height="7"></rect>
-          <rect x="3" y="14" width="7" height="7"></rect>
-        </svg>
-        <div style="flex: 1;">
-          <div style="font-size: 13.5px; font-weight: 800; color: #fff;">QRIS Toko</div>
-          <div style="font-size: 11.5px; color: var(--text-sub); margin-top: 2px; line-height: 1.35;">
-            Bayar via QRIS saat memesan. Struk digital otomatis tersimpan untuk ambil barang.
+      <div style="background: var(--surface-card, #172333); border: 1px solid var(--border-card); border-radius: var(--radius-md); padding: 14px; margin-bottom: 14px;">
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--text-sub); flex-shrink: 0;">
+            <rect x="3" y="3" width="7" height="7"></rect>
+            <rect x="14" y="3" width="7" height="7"></rect>
+            <rect x="14" y="14" width="7" height="7"></rect>
+            <rect x="3" y="14" width="7" height="7"></rect>
+          </svg>
+          <div style="font-size: 14px; font-weight: 800; color: #fff;">QRIS Toko</div>
+        </div>
+
+        <!-- Tampilan Foto QRIS Toko Langsung Besar & Utuh -->
+        <div id="checkout-store-qris-preview" style="display: none; text-align: center;">
+          <div style="background: #ffffff; border-radius: 12px; padding: 10px; max-width: 270px; margin: 4px auto 0 auto; box-shadow: 0 4px 16px rgba(0,0,0,0.25);">
+            <img id="checkout-store-qris-img" src="" alt="Foto QRIS Toko" style="width: 100%; height: auto; max-height: 380px; object-fit: contain; display: block; margin: 0 auto; border-radius: 8px;" />
           </div>
         </div>
       </div>
@@ -966,14 +1027,34 @@
     </div>
   </div>
 
-  <!-- ─── MODAL POPUP QRIS (KLIKQRIS SANDBOX) ─── -->
+  <!-- ─── MODAL POPUP QRIS (KLIKQRIS SANDBOX + FOTO QRIS KASIR) ─── -->
   <div class="qris-modal-screen" id="qris-modal-screen">
     <div class="qris-card-box">
       <h3 style="font-size:18px; font-weight:800; color:var(--text-white); margin-bottom:4px;">Pembayaran QRIS</h3>
-      <p style="font-size:12px; color:var(--text-sub);">Scan QR Code memakai m-Banking atau e-Wallet</p>
+      <p style="font-size:12px; color:var(--text-sub);" id="qris-modal-subtitle">Scan QR Code memakai m-Banking atau e-Wallet</p>
 
-      <div class="qris-qr-image-wrap">
-        <img id="qris-image-el" class="qris-qr-img" src="" alt="QRIS Code" />
+      <!-- Switcher Tab antara Foto QRIS Toko & QR Dinamis Sandbox -->
+      <div id="qris-view-switcher" style="display: none; background: rgba(255,255,255,0.06); border-radius: 8px; padding: 3px; margin: 12px 0 10px 0; gap: 4px;">
+        <button type="button" id="tab-btn-store-qris" onclick="switchQrisView('store')" class="qris-switch-btn active" style="flex: 1; padding: 6px 4px; font-size: 11px; font-weight: 700; border-radius: 6px; border: none; cursor: pointer;">
+          QRIS Toko
+        </button>
+        <button type="button" id="tab-btn-sandbox-qris" onclick="switchQrisView('sandbox')" class="qris-switch-btn" style="flex: 1; padding: 6px 4px; font-size: 11px; font-weight: 700; border-radius: 6px; border: none; cursor: pointer;">
+          QR Dinamis
+        </button>
+      </div>
+
+      <!-- Container Foto QRIS Toko - Ditampilkan Penuh & Besar -->
+      <div id="qris-store-wrap" style="display: none;">
+        <div class="qris-qr-image-wrap" style="max-width: 260px; padding: 10px;">
+          <img id="qris-store-image-el" class="qris-qr-img" src="" alt="Foto QRIS Toko" style="max-height: 290px; width: 100%; object-fit: contain;" />
+        </div>
+      </div>
+
+      <!-- Container QR Dinamis Sandbox -->
+      <div id="qris-sandbox-wrap">
+        <div class="qris-qr-image-wrap">
+          <img id="qris-image-el" class="qris-qr-img" src="" alt="QRIS Code" />
+        </div>
       </div>
 
       <div class="qris-amount-badge">
@@ -984,7 +1065,11 @@
 
       <div class="qris-timer-text" id="qris-timer-display">Batas waktu pembayaran: 59:59</div>
 
+      <!-- Tombol Pembayaran Simulasi: TETAP ADA SESUAI PERMINTAAN USER -->
       <button class="btn-qris-sim-pay" id="btn-sim-pay" onclick="simulateQrisPayment()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
         <span>Simulasikan Pembayaran Lunas</span>
       </button>
 
@@ -995,6 +1080,19 @@
       <button class="btn-card-add" style="height:36px; background:transparent; border:1px solid rgba(255,255,255,0.15); color:var(--text-sub);" onclick="closeQrisModal()">
         Tutup
       </button>
+    </div>
+  </div>
+
+  <!-- ─── LIGHTBOX ZOOM FOTO QRIS TOKO ─── -->
+  <div class="modal-overlay" id="store-qris-lightbox" style="z-index: 2000; display: none; align-items: center; justify-content: center; padding: 16px; background: rgba(0, 0, 0, 0.88);" onclick="closeStoreQrisLightbox()">
+    <div style="position: relative; max-width: 92vw; max-height: 90vh; display: flex; flex-direction: column; align-items: center;" onclick="event.stopPropagation()">
+      <button type="button" onclick="closeStoreQrisLightbox()" style="position: absolute; top: -14px; right: -14px; width: 34px; height: 34px; border-radius: 50%; background: #ef4444; color: #fff; border: 2px solid #fff; font-weight: 800; font-size: 15px; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.5); z-index: 10;">✕</button>
+      <div style="background: #fff; border-radius: 14px; padding: 10px; box-shadow: 0 12px 32px rgba(0,0,0,0.6); max-height: 78vh; display: flex; align-items: center; justify-content: center;">
+        <img id="lightbox-store-qris-img" src="" alt="Foto QRIS Toko Pilihan Kasir" style="max-width: 82vw; max-height: 72vh; object-fit: contain; display: block; border-radius: 6px;" />
+      </div>
+      <div style="margin-top: 10px; color: #fff; font-size: 12px; font-weight: 700; text-align: center; background: rgba(0,0,0,0.6); padding: 5px 14px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.15);">
+        📸 Foto QRIS Toko Resmi (Pilihan Kasir)
+      </div>
     </div>
   </div>
 
@@ -1071,11 +1169,38 @@
     let searchQuery = '';
     let cart = {}; // { productId: { item, qty } }
     let selectedPayment = 'qris';
-    let activeTenantId = 1;
+    let currentDataMode = localStorage.getItem('pos_data_mode') || 'simulasi';
+    let activeTenantId = (currentDataMode === 'asli') ? 3 : 2;
+    let storeQrisImageUrl = null;
+    let currentQrisViewMode = 'store';
     let currentQrisOrderId = null;
     let currentQrisSignature = null;
     let currentInvoiceNo = null;
     let qrisPollingInterval = null;
+
+    function switchDataMode(mode) {
+      if (currentDataMode === mode) return;
+      currentDataMode = mode;
+      localStorage.setItem('pos_data_mode', mode);
+      activeTenantId = (mode === 'asli') ? 3 : 2;
+
+      // Reset keranjang belanja pembeli saat ganti mode
+      cart = {};
+      updateCartUI();
+
+      updateDataModeUI();
+      fetchStoreDetails();
+      fetchCatalog();
+    }
+
+    function updateDataModeUI() {
+      const btnSimulasi = document.getElementById('btn-mode-simulasi');
+      const btnAsli = document.getElementById('btn-mode-asli');
+      if (btnSimulasi && btnAsli) {
+        btnSimulasi.classList.toggle('active', currentDataMode === 'simulasi');
+        btnAsli.classList.toggle('active', currentDataMode === 'asli');
+      }
+    }
 
     const blobImgCache = {};
     function loadSafeImage(imgEl, url) {
@@ -1109,6 +1234,80 @@
       }
     }
 
+    function loadSafeQrisImage(imgEl, url) {
+      if (!imgEl || !url) return;
+      if (blobImgCache[url]) {
+        imgEl.src = blobImgCache[url];
+        return;
+      }
+      imgEl.onerror = () => {
+        console.warn('QRIS image load error for:', url);
+      };
+      if (url.startsWith('/uploads') || url.startsWith(window.location.origin)) {
+        fetch(url, { headers: { 'ngrok-skip-browser-warning': 'true' } })
+          .then(res => {
+            if (!res.ok) throw new Error('Img fetch failed');
+            return res.blob();
+          })
+          .then(blob => {
+            const blobUrl = URL.createObjectURL(blob);
+            blobImgCache[url] = blobUrl;
+            imgEl.src = blobUrl;
+          })
+          .catch(() => {
+            imgEl.src = url;
+          });
+      } else {
+        imgEl.src = url;
+      }
+    }
+
+    function renderCheckoutQrisPreview() {
+      const card = document.getElementById('checkout-store-qris-preview');
+      const thumb = document.getElementById('checkout-store-qris-img');
+      if (storeQrisImageUrl) {
+        if (card) card.style.display = 'block';
+        if (thumb) loadSafeQrisImage(thumb, storeQrisImageUrl);
+      } else {
+        if (card) card.style.display = 'none';
+      }
+    }
+
+    function openStoreQrisLightbox() {
+      if (!storeQrisImageUrl) return;
+      const modal = document.getElementById('store-qris-lightbox');
+      const img = document.getElementById('lightbox-store-qris-img');
+      if (modal && img) {
+        loadSafeQrisImage(img, storeQrisImageUrl);
+        modal.style.display = 'flex';
+      }
+    }
+
+    function closeStoreQrisLightbox() {
+      const modal = document.getElementById('store-qris-lightbox');
+      if (modal) modal.style.display = 'none';
+    }
+
+    function switchQrisView(mode) {
+      currentQrisViewMode = mode;
+      const btnStore = document.getElementById('tab-btn-store-qris');
+      const btnSandbox = document.getElementById('tab-btn-sandbox-qris');
+      const wrapStore = document.getElementById('qris-store-wrap');
+      const wrapSandbox = document.getElementById('qris-sandbox-wrap');
+
+      if (mode === 'store') {
+        if (btnStore) btnStore.classList.add('active');
+        if (btnSandbox) btnSandbox.classList.remove('active');
+        if (wrapStore) wrapStore.style.display = 'block';
+        if (wrapSandbox) wrapSandbox.style.display = 'none';
+      } else {
+        if (btnStore) btnStore.classList.remove('active');
+        if (btnSandbox) btnSandbox.classList.add('active');
+        if (wrapStore) wrapStore.style.display = 'none';
+        if (wrapSandbox) wrapSandbox.style.display = 'block';
+      }
+    }
+
     // Default placeholder adalah kotak kardus 📦 untuk semua barang yang belum berfoto
     function getProductEmoji(name) {
       return '📦';
@@ -1137,8 +1336,13 @@
       const urlParams = new URLSearchParams(window.location.search);
       const paramTenantId = urlParams.get('tenant_id') || urlParams.get('toko');
       if (paramTenantId) {
-        activeTenantId = parseInt(paramTenantId) || 1;
+        activeTenantId = parseInt(paramTenantId) || 2;
+        currentDataMode = (activeTenantId === 3) ? 'asli' : 'simulasi';
+      } else {
+        currentDataMode = localStorage.getItem('pos_data_mode') || 'simulasi';
+        activeTenantId = (currentDataMode === 'asli') ? 3 : 2;
       }
+      updateDataModeUI();
 
       // Check role: if staff (kasir / owner), auto-redirect to dashboard POS unless explicitly in customer mode
       try {
@@ -1230,6 +1434,10 @@
         if (res.ok) {
           const data = await res.json();
           if (data.store_name) document.getElementById('store-title-display').textContent = data.store_name;
+          if (data.qris_image_url) {
+            storeQrisImageUrl = data.qris_image_url;
+          }
+          renderCheckoutQrisPreview();
           
           const statusText = document.getElementById('store-status-text');
           const statusDot = document.getElementById('store-status-dot');
@@ -1489,6 +1697,7 @@
       document.getElementById('checkout-modal-overlay').classList.add('active');
       document.getElementById('checkout-bottom-sheet').classList.add('active');
       renderSheetCartItems();
+      renderCheckoutQrisPreview();
     }
 
     function closeCheckoutModal() {
@@ -1558,8 +1767,8 @@
           closeCheckoutModal();
 
           if (data.is_qris && data.qris) {
-            // Tampilkan Modal QRIS KlikQRIS Sandbox
-            showQrisPopup(data.qris, data.invoice_no);
+            // Tampilkan Modal QRIS (Foto Kasir + KlikQRIS Sandbox)
+            showQrisPopup(data.qris, data.invoice_no, data.store_qris_image_url);
           } else {
             // Langsung tampilkan struk thermal
             showReceiptModal(data.invoice_no);
@@ -1578,15 +1787,31 @@
       }
     }
 
-    // ─── POPUP QRIS (KLIKQRIS SANDBOX) ───
-    function showQrisPopup(qrisData, invoiceNo) {
+    // ─── POPUP QRIS (KLIKQRIS SANDBOX + FOTO QRIS KASIR) ───
+    function showQrisPopup(qrisData, invoiceNo, storeQrisUrl) {
       currentQrisOrderId = qrisData.order_id;
       currentQrisSignature = qrisData.signature;
       currentInvoiceNo = invoiceNo;
 
+      if (storeQrisUrl) {
+        storeQrisImageUrl = storeQrisUrl;
+      }
+
       document.getElementById('qris-total-amount-display').textContent = formatRupiah(qrisData.total_amount);
       const imgEl = document.getElementById('qris-image-el');
       imgEl.src = qrisData.qris_image || qrisData.qris_url || '';
+
+      const storeImgEl = document.getElementById('qris-store-image-el');
+      const switcher = document.getElementById('qris-view-switcher');
+
+      if (storeQrisImageUrl) {
+        if (switcher) switcher.style.display = 'flex';
+        if (storeImgEl) loadSafeQrisImage(storeImgEl, storeQrisImageUrl);
+        switchQrisView('store');
+      } else {
+        if (switcher) switcher.style.display = 'none';
+        switchQrisView('sandbox');
+      }
 
       document.getElementById('qris-modal-screen').classList.add('active');
 
@@ -1638,14 +1863,18 @@
         if (res.ok) {
           if (qrisPollingInterval) clearInterval(qrisPollingInterval);
           closeQrisModal();
-          alert('Pembayaran telah ditandai lunas di sistem.');
+          alert('✅ Pembayaran QRIS Berhasil Disimulasikan (LUNAS)!');
           showReceiptModal(currentInvoiceNo);
         }
       } catch (err) {
         alert('Gagal mengeksekusi simulasi pembayaran.');
       } finally {
         btn.disabled = false;
-        btn.innerHTML = `<span>Simulasikan Pembayaran Lunas</span>`;
+        btn.innerHTML = `
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+          <span>Simulasikan Pembayaran Lunas</span>`;
       }
     }
 

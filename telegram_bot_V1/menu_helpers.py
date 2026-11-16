@@ -92,8 +92,8 @@ def build_main_menu_keyboard(user_id: int):
         row3.append(InlineKeyboardButton("🧾 Riwayat Transaksi", web_app=WebAppInfo(url=urls["transaksi"])))
     if can(user_id, "panel:manage") or can(user_id, "consign:manage"):
         row3.append(InlineKeyboardButton("⚙️ Panel Owner & Kasir", web_app=WebAppInfo(url=urls["kasir"])))
-    elif can(user_id, "promo:view") or can(user_id, "schedule:view"):
-        row3.append(InlineKeyboardButton("🏷️ Promo & Jadwal", web_app=WebAppInfo(url=urls["dashboard"])))
+    elif can(user_id, "schedule:view"):
+        row3.append(InlineKeyboardButton("🕒 Jadwal Toko", web_app=WebAppInfo(url=urls["dashboard"])))
     if row3:
         kb.append(row3)
         

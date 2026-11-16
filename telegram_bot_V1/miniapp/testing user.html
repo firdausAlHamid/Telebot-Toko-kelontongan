@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Form Evaluasi Kepuasan Pengguna — Toko Kelontong POS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+
+    .scale-btn[aria-checked="true"] {
+      background-color: #059669;
+      border-color: #059669;
+      color: #ffffff;
+      box-shadow: 0 2px 6px rgba(5, 150, 105, 0.28);
+    }
+
+    .choice-chip[aria-pressed="true"] {
+      background-color: #2563eb;
+      border-color: #2563eb;
+      color: #ffffff;
+    }
+
+    @media print {
+      .no-print {
+        display: none !important;
+      }
+    }
+  </style>
+</head>
+
+<body class="bg-slate-50 text-slate-900 min-h-screen antialiased">
+  <div class="max-w-2xl mx-auto px-4 py-6 sm:py-10">
+
+    <!-- Header Card -->
+    <header class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 sm:p-6 mb-5">
+      <div class="flex items-start justify-between gap-4">
+        <div class="flex items-start gap-3.5">
+          <div class="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+            <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 11l3 3L22 4" />
+              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+            </svg>
+          </div>
+          <div>
+            <div class="text-xs font-semibold uppercase tracking-wider text-emerald-600">User Acceptance &amp; Satisfaction Testing</div>
+            <h1 class="text-lg sm:text-xl font-bold text-slate-900 mt-0.5 tracking-tight">
+              Kuesioner Kepuasan Pengguna Sistem POS
+            </h1>
+            <p class="text-xs sm:text-sm text-slate-500 mt-1 leading-relaxed">
+              Evaluasi penggunaan Telegram Bot &amp; Mini App Manajemen Toko Kelontong. Terdapat 10 pertanyaan singkat dengan skala penilaian 1–5.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Progress Bar -->
+      <div class="mt-5 pt-4 border-t border-slate-100">
+        <div class="flex items-center justify-between text-xs mb-1.5">
+          <span class="font-medium text-slate-500">Progres Pengisian</span>
+          <span id="progress-label" class="font-semibold text-slate-700">0 / 10 terjawab</span>
+        </div>
+        <div class="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+          <div id="progress-bar" class="h-full bg-emerald-600 rounded-full transition-all duration-300" style="width: 0%"></div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Feedback Form -->
+    <form id="feedback-form" class="space-y-4" novalidate>
+
+      <!-- Respondent Info -->
+      <section class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+        <h2 class="text-sm font-bold text-slate-900 mb-3 flex items-center gap-2">
+          <svg class="w-4 h-4 text-blue-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+            <circle cx="12" cy="7" r="4" />
+          </svg>
+          <span>Identitas Penguji</span>
+        </h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label for="resp-name" class="block text-xs font-semibold text-slate-700 mb-1">
+              Nama / Inisial <span class="text-rose-500">*</span>
+            </label>
+            <input id="resp-name" type="text" required placeholder="Contoh: Budi / Pemilik Toko"
+              class="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-500 focus:outline-none transition" />
+          </div>
+          <div>
+            <label for="resp-role" class="block text-xs font-semibold text-slate-700 mb-1">
+              Peran Saat Testing <span class="text-rose-500">*</span>
+            </label>
+            <select id="resp-role" required
+              class="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-500 focus:outline-none transition">
+              <option value="Pemilik Toko (Owner)">Pemilik Toko (Owner)</option>
+              <option value="Kasir">Kasir</option>
+              <option value="Pelanggan">Pelanggan</option>
+              <option value="Penguji Akademik / Dosen">Penguji Akademik / Dosen</option>
+            </select>
+          </div>
+        </div>
+      </section>
+
+      <!-- 10 Dynamic Questions Container -->
+      <div id="questions-container" class="space-y-4"></div>
+
+      <!-- Error Notice -->
+      <div id="form-error"
+        class="hidden rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-medium text-amber-800 flex items-center gap-2">
+        <svg class="w-4 h-4 shrink-0 text-amber-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10" />
+          <line x1="12" y1="8" x2="12" y2="12" />
+          <line x1="12" y1="16" x2="12.01" y2="16" />
+        </svg>
+        <span id="form-error-text">Harap lengkapi semua pertanyaan skala terlebih dahulu.</span>
+      </div>
+
+      <!-- Submit Bar -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 no-print">
+        <button type="button" id="btn-reset"
+          class="px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition cursor-pointer">
+          Reset Jawaban
+        </button>
+        <button type="submit"
+          class="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white text-sm font-bold shadow-sm transition cursor-pointer">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13" />
+            <polygon points="22 2 15 22 11 13 2 9 22 2" />
+          </svg>
+          <span>Kirim Evaluasi</span>
+        </button>
+      </div>
+    </form>
+
+    <!-- Submission Result Card -->
+    <section id="result-section" class="hidden bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mt-5">
+      <div class="flex items-start justify-between gap-4">
+        <div class="flex items-center gap-3">
+          <div class="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+            <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+              <polyline points="22 4 12 14.01 9 11.01" />
+            </svg>
+          </div>
+          <div>
+            <h2 class="text-base font-bold text-slate-900">Terima Kasih! Feedback Tersimpan</h2>
+            <p id="result-meta" class="text-xs text-slate-500 mt-0.5">-</p>
+          </div>
+        </div>
+        <span id="result-badge"
+          class="px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+          Sangat Puas
+        </span>
+      </div>
+
+      <!-- Overall Score Banner -->
+      <div class="grid grid-cols-3 gap-3 mt-5">
+        <div class="rounded-xl bg-slate-50 border border-slate-200 p-3.5">
+          <div class="text-[11px] font-medium text-slate-500">Skor Rata-Rata</div>
+          <div id="result-avg" class="text-2xl font-extrabold text-slate-900 mt-0.5">0.0 / 5</div>
+        </div>
+        <div class="rounded-xl bg-slate-50 border border-slate-200 p-3.5">
+          <div class="text-[11px] font-medium text-slate-500">Persentase Kepuasan</div>
+          <div id="result-pct" class="text-2xl font-extrabold text-emerald-600 mt-0.5">0%</div>
+        </div>
+        <div class="rounded-xl bg-slate-50 border border-slate-200 p-3.5">
+          <div class="text-[11px] font-medium text-slate-500">Rekomendasi</div>
+          <div id="result-nps" class="text-lg font-bold text-blue-600 mt-1">-</div>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="flex flex-wrap gap-2 mt-5 pt-4 border-t border-slate-100 no-print">
+        <button type="button" id="btn-copy-summary"
+          class="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition cursor-pointer">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2" />
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+          </svg>
+          <span>Salin Ringkasan</span>
+        </button>
+        <button type="button" id="btn-new-entry"
+          class="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition cursor-pointer">
+          <span>Isi Responden Baru</span>
+        </button>
+      </div>
+      <div id="copy-toast" class="hidden text-xs font-semibold text-emerald-600 mt-2">
+        Ringkasan jawaban berhasil disalin ke clipboard.
+      </div>
+    </section>
+
+    <!-- Accumulated Respondents Table (UAT Recap) -->
+    <section id="recap-section" class="hidden bg-white rounded-2xl border border-slate-200 shadow-sm p-5 mt-5">
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div>
+          <h2 class="text-sm font-bold text-slate-900">Rekap Pengujian Tersimpan</h2>
+          <p id="recap-subtitle" class="text-xs text-slate-500 mt-0.5">0 responden tercatat di perangkat ini</p>
+        </div>
+        <div class="flex items-center gap-2 no-print">
+          <button type="button" id="btn-export-csv"
+            class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition cursor-pointer">
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            <span>Unduh Rekap CSV</span>
+          </button>
+          <button type="button" id="btn-clear-recap"
+            class="px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-500 hover:text-rose-600 hover:border-rose-200 transition cursor-pointer">
+            Hapus Semua
+          </button>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse text-xs">
+          <thead>
+            <tr class="border-b border-slate-200 text-slate-500">
+              <th class="py-2 pr-3 font-semibold">Responden</th>
+              <th class="py-2 px-2 font-semibold">Peran</th>
+              <th class="py-2 px-2 font-semibold text-right">Rata-rata</th>
+              <th class="py-2 px-2 font-semibold">Rekomendasi</th>
+              <th class="py-2 pl-2 font-semibold">Catatan</th>
+            </tr>
+          </thead>
+          <tbody id="recap-tbody" class="divide-y divide-slate-100 text-slate-700"></tbody>
+        </table>
+      </div>
+    </section>
+
+  </div>
+
+  <script>
+    const QUESTIONS = [
+      {
+        id: 'q1',
+        type: 'scale',
+        aspect: 'Kemudahan Penggunaan',
+        title: 'Seberapa mudah aplikasi Telegram Bot & Mini App ini dipahami dan dioperasikan tanpa panduan khusus?',
+        lowLabel: 'Sangat Sulit',
+        highLabel: 'Sangat Mudah',
+      },
+      {
+        id: 'q2',
+        type: 'scale',
+        aspect: 'Desain & Tampilan (UI/UX)',
+        title: 'Bagaimana penilaian Anda terhadap kerapian tata letak, keterbacaan teks, dan kenyamanan visual antarmuka?',
+        lowLabel: 'Sangat Kurang',
+        highLabel: 'Sangat Baik',
+      },
+      {
+        id: 'q3',
+        type: 'scale',
+        aspect: 'Fitur Kasir POS & Penjualan Cepat',
+        title: 'Seberapa praktis fitur Kasir POS, keranjang belanja, dan Penjualan Cepat untuk mencatat transaksi harian?',
+        lowLabel: 'Tidak Praktis',
+        highLabel: 'Sangat Praktis',
+      },
+      {
+        id: 'q4',
+        type: 'scale',
+        aspect: 'Pesanan, Struk & Kode Transaksi',
+        title: 'Apakah penomoran kode transaksi (#DDMM-XXXX), daftar pesanan, dan struk digital mudah dibaca dan dicek?',
+        lowLabel: 'Kurang Jelas',
+        highLabel: 'Sangat Jelas',
+      },
+      {
+        id: 'q5',
+        type: 'scale',
+        aspect: 'Kelola Stok & Katalog',
+        title: 'Seberapa efektif fitur Kelola Stok, kategori produk, dan indikator status stok dalam memantau ketersediaan barang?',
+        lowLabel: 'Tidak Efektif',
+        highLabel: 'Sangat Efektif',
+      },
+      {
+        id: 'q6',
+        type: 'scale',
+        aspect: 'Laporan Keuangan & Unduh Excel',
+        title: 'Apakah menu Laporan (Buku Besar, Matriks SKU, Jam Sibuk, dan Unduh .xlsx) sudah informatif untuk audit toko?',
+        lowLabel: 'Tidak Informatif',
+        highLabel: 'Sangat Informatif',
+      },
+      {
+        id: 'q7',
+        type: 'scale',
+        aspect: 'Perkiraan Restock Cerdas Musiman',
+        title: 'Seberapa membantu rekomendasi jumlah restock (+pcs), progress bar ketahanan stok, dan peringatan Tahan Beli?',
+        lowLabel: 'Tidak Membantu',
+        highLabel: 'Sangat Membantu',
+      },
+      {
+        id: 'q8',
+        type: 'scale',
+        aspect: 'Kecepatan & Stabilitas Sistem',
+        title: 'Bagaimana performa kecepatan muat data dan kestabilan aplikasi selama Anda melakukan pengujian?',
+        lowLabel: 'Lambat / Error',
+        highLabel: 'Cepat & Stabil',
+      },
+      {
+        id: 'q9',
+        type: 'scale_nps',
+        aspect: 'Kepuasan Keseluruhan & Adopsi',
+        title: 'Secara keseluruhan, seberapa puas Anda dan apakah Anda bersedia merekomendasikan sistem ini untuk toko nyata?',
+        lowLabel: 'Tidak Puas',
+        highLabel: 'Sangat Puas',
+        choices: ['Ya, Siap Pakai', 'Mungkin / Perlu Sedikit Penyesuaian', 'Belum'],
+      },
+      {
+        id: 'q10',
+        type: 'open',
+        aspect: 'Kendala & Saran Perbaikan',
+        title: 'Pilih area yang paling ingin dikomentari, lalu tuliskan kendala atau saran perbaikan Anda:',
+        tags: ['Kasir POS', 'Pesanan & Struk', 'Laporan & Excel', 'Restock Musiman', 'Kelola Stok', 'Bot Telegram'],
+        placeholder: 'Contoh: Proses checkout cepat dan laporan Excel mudah dibaca. Saran: tambahkan shortcut cetak struk...',
+      },
+    ];
+
+    const STORAGE_KEY = 'toko_kelontong_uat_feedback_v1';
+    const answers = {};
+    let selectedRecommend = '';
+    let selectedTags = new Set();
+    let lastSubmitted = null;
+
+    function esc(str) {
+      return String(str ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function renderQuestions() {
+      const container = document.getElementById('questions-container');
+      container.innerHTML = QUESTIONS.map((q, idx) => {
+        const num = idx + 1;
+        if (q.type === 'scale' || q.type === 'scale_nps') {
+          const buttons = [1, 2, 3, 4, 5].map(val => `
+            <button type="button"
+              data-qid="${q.id}"
+              data-val="${val}"
+              aria-checked="false"
+              onclick="selectScale('${q.id}', ${val})"
+              class="scale-btn h-11 rounded-xl border border-slate-200 bg-slate-50 hover:border-emerald-400 text-sm font-bold text-slate-700 transition cursor-pointer">
+              ${val}
+            </button>
+          `).join('');
+
+          const npsBlock = q.type === 'scale_nps' ? `
+            <div class="mt-4 pt-3.5 border-t border-slate-100">
+              <div class="text-xs font-semibold text-slate-700 mb-2">Apakah sistem layak digunakan / direkomendasikan?</div>
+              <div class="flex flex-wrap gap-2">
+                ${q.choices.map(c => `
+                  <button type="button"
+                    data-recommend="${esc(c)}"
+                    aria-pressed="false"
+                    onclick="selectRecommend('${esc(c)}')"
+                    class="choice-chip px-3.5 py-2 rounded-xl border border-slate-200 bg-slate-50 hover:border-blue-400 text-xs font-semibold text-slate-700 transition cursor-pointer">
+                    ${esc(c)}
+                  </button>
+                `).join('')}
+              </div>
+            </div>
+          ` : '';
+
+          return `
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+              <div class="flex items-center justify-between gap-2 mb-1.5">
+                <span class="text-[11px] font-bold uppercase tracking-wider text-blue-600">${num}. ${esc(q.aspect)}</span>
+                <span class="text-[11px] font-medium text-slate-400">Skala 1–5</span>
+              </div>
+              <p class="text-sm font-semibold text-slate-900 leading-snug mb-3.5">${esc(q.title)}</p>
+              <div class="grid grid-cols-5 gap-2">
+                ${buttons}
+              </div>
+              <div class="flex items-center justify-between text-[11px] font-medium text-slate-400 mt-2">
+                <span>1 = ${esc(q.lowLabel)}</span>
+                <span>5 = ${esc(q.highLabel)}</span>
+              </div>
+              ${npsBlock}
+            </div>
+          `;
+        }
+
+        // Open feedback question (#10)
+        return `
+          <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+            <div class="flex items-center justify-between gap-2 mb-1.5">
+              <span class="text-[11px] font-bold uppercase tracking-wider text-blue-600">${num}. ${esc(q.aspect)}</span>
+              <span class="text-[11px] font-medium text-slate-400">Masukan Terbuka</span>
+            </div>
+            <p class="text-sm font-semibold text-slate-900 leading-snug mb-3">${esc(q.title)}</p>
+            <div class="flex flex-wrap gap-2 mb-3">
+              ${q.tags.map(tag => `
+                <button type="button"
+                  data-tag="${esc(tag)}"
+                  aria-pressed="false"
+                  onclick="toggleTag('${esc(tag)}')"
+                  class="choice-chip px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:border-blue-400 text-xs font-medium text-slate-600 transition cursor-pointer">
+                  ${esc(tag)}
+                </button>
+              `).join('')}
+            </div>
+            <textarea id="open-feedback" rows="4" placeholder="${esc(q.placeholder)}"
+              oninput="updateProgress()"
+              class="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-500 focus:outline-none transition resize-y"></textarea>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function selectScale(qid, val) {
+      answers[qid] = val;
+      document.querySelectorAll(`.scale-btn[data-qid="${qid}"]`).forEach(btn => {
+        btn.setAttribute('aria-checked', String(Number(btn.dataset.val) === val));
+      });
+      hideError();
+      updateProgress();
+    }
+
+    function selectRecommend(choice) {
+      selectedRecommend = choice;
+      document.querySelectorAll('[data-recommend]').forEach(btn => {
+        btn.setAttribute('aria-pressed', String(btn.dataset.recommend === choice));
+      });
+      hideError();
+      updateProgress();
+    }
+
+    function toggleTag(tag) {
+      if (selectedTags.has(tag)) {
+        selectedTags.delete(tag);
+      } else {
+        selectedTags.add(tag);
+      }
+      document.querySelectorAll('[data-tag]').forEach(btn => {
+        btn.setAttribute('aria-pressed', String(selectedTags.has(btn.dataset.tag)));
+      });
+    }
+
+    function updateProgress() {
+      let answered = 0;
+      for (let i = 1; i <= 8; i++) {
+        if (answers[`q${i}`]) answered++;
+      }
+      if (answers.q9 && selectedRecommend) answered++;
+      const note = document.getElementById('open-feedback')?.value.trim() || '';
+      if (note.length > 0 || selectedTags.size > 0) answered++;
+
+      const pct = Math.round((answered / 10) * 100);
+      document.getElementById('progress-label').textContent = `${answered} / 10 terjawab`;
+      document.getElementById('progress-bar').style.width = `${pct}%`;
+    }
+
+    function showError(msg) {
+      const box = document.getElementById('form-error');
+      document.getElementById('form-error-text').textContent = msg;
+      box.classList.remove('hidden');
+    }
+
+    function hideError() {
+      document.getElementById('form-error').classList.add('hidden');
+    }
+
+    function getPredicate(avg) {
+      if (avg >= 4.5) return 'Sangat Puas';
+      if (avg >= 3.8) return 'Puas';
+      if (avg >= 3.0) return 'Cukup';
+      return 'Perlu Perbaikan';
+    }
+
+    function loadSavedResponses() {
+      try {
+        return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+      } catch (_) {
+        return [];
+      }
+    }
+
+    function saveResponse(entry) {
+      const list = loadSavedResponses();
+      list.unshift(entry);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+      renderRecap();
+    }
+
+    function renderRecap() {
+      const list = loadSavedResponses();
+      const section = document.getElementById('recap-section');
+      const tbody = document.getElementById('recap-tbody');
+      const sub = document.getElementById('recap-subtitle');
+      if (!list.length) {
+        section.classList.add('hidden');
+        return;
+      }
+      section.classList.remove('hidden');
+      const overall = (list.reduce((s, r) => s + r.average, 0) / list.length).toFixed(2);
+      sub.textContent = `${list.length} responden tercatat · Rata-rata keseluruhan ${overall} / 5.0`;
+
+      tbody.innerHTML = list.map(r => `
+        <tr>
+          <td class="py-2.5 pr-3 font-semibold text-slate-900">${esc(r.name)}</td>
+          <td class="py-2.5 px-2 text-slate-500">${esc(r.role)}</td>
+          <td class="py-2.5 px-2 text-right font-bold text-emerald-600">${r.average.toFixed(2)}</td>
+          <td class="py-2.5 px-2">${esc(r.recommend)}</td>
+          <td class="py-2.5 pl-2 max-w-[200px] truncate text-slate-500" title="${esc(r.comment)}">${esc(r.comment || '-')}</td>
+        </tr>
+      `).join('');
+    }
+
+    document.getElementById('feedback-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const name = document.getElementById('resp-name').value.trim();
+      const role = document.getElementById('resp-role').value;
+      if (!name) {
+        showError('Harap isi Nama / Inisial penguji terlebih dahulu.');
+        document.getElementById('resp-name').focus();
+        return;
+      }
+      for (let i = 1; i <= 9; i++) {
+        if (!answers[`q${i}`]) {
+          showError(`Pertanyaan nomor ${i} belum diberi nilai skala (1–5).`);
+          return;
+        }
+      }
+      if (!selectedRecommend) {
+        showError('Pada pertanyaan nomor 9, pilih kesiapan rekomendasi penggunaan aplikasi.');
+        return;
+      }
+
+      const scaleScores = {};
+      let sum = 0;
+      for (let i = 1; i <= 9; i++) {
+        scaleScores[`q${i}`] = answers[`q${i}`];
+        sum += answers[`q${i}`];
+      }
+      const avg = Number((sum / 9).toFixed(2));
+      const pct = Math.round((avg / 5) * 100);
+      const comment = document.getElementById('open-feedback').value.trim();
+
+      const entry = {
+        timestamp: new Date().toLocaleString('id-ID'),
+        name,
+        role,
+        scores: scaleScores,
+        average: avg,
+        satisfactionPct: pct,
+        predicate: getPredicate(avg),
+        recommend: selectedRecommend,
+        tags: Array.from(selectedTags),
+        comment,
+      };
+
+      lastSubmitted = entry;
+      saveResponse(entry);
+
+      document.getElementById('result-meta').textContent = `${entry.name} (${entry.role}) · ${entry.timestamp}`;
+      document.getElementById('result-badge').textContent = entry.predicate;
+      document.getElementById('result-avg').textContent = `${entry.average.toFixed(2)} / 5`;
+      document.getElementById('result-pct').textContent = `${entry.satisfactionPct}%`;
+      document.getElementById('result-nps').textContent = entry.recommend;
+
+      document.getElementById('feedback-form').classList.add('hidden');
+      document.getElementById('result-section').classList.remove('hidden');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+
+    function resetFormState() {
+      for (let i = 1; i <= 9; i++) delete answers[`q${i}`];
+      selectedRecommend = '';
+      selectedTags.clear();
+      document.getElementById('resp-name').value = '';
+      const openBox = document.getElementById('open-feedback');
+      if (openBox) openBox.value = '';
+      document.querySelectorAll('.scale-btn').forEach(b => b.setAttribute('aria-checked', 'false'));
+      document.querySelectorAll('.choice-chip').forEach(b => b.setAttribute('aria-pressed', 'false'));
+      hideError();
+      updateProgress();
+    }
+
+    document.getElementById('btn-reset').addEventListener('click', resetFormState);
+
+    document.getElementById('btn-new-entry').addEventListener('click', () => {
+      resetFormState();
+      document.getElementById('result-section').classList.add('hidden');
+      document.getElementById('feedback-form').classList.remove('hidden');
+      document.getElementById('copy-toast').classList.add('hidden');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+
+    document.getElementById('btn-copy-summary').addEventListener('click', async () => {
+      if (!lastSubmitted) return;
+      const lines = [
+        `HASIL EVALUASI KEPUASAN PENGGUNA`,
+        `Responden: ${lastSubmitted.name} (${lastSubmitted.role})`,
+        `Waktu: ${lastSubmitted.timestamp}`,
+        `Rata-rata Skor: ${lastSubmitted.average.toFixed(2)} / 5 (${lastSubmitted.satisfactionPct}% - ${lastSubmitted.predicate})`,
+        `Rekomendasi: ${lastSubmitted.recommend}`,
+        '',
+        ...QUESTIONS.slice(0, 9).map((q, idx) => `${idx + 1}. ${q.aspect}: ${lastSubmitted.scores[`q${idx + 1}`]}/5`),
+        `10. Area: ${lastSubmitted.tags.join(', ') || '-'} | Catatan: ${lastSubmitted.comment || '-'}`,
+      ].join('\n');
+      try {
+        await navigator.clipboard.writeText(lines);
+        document.getElementById('copy-toast').classList.remove('hidden');
+      } catch (_) {
+        alert(lines);
+      }
+    });
+
+    document.getElementById('btn-export-csv').addEventListener('click', () => {
+      const list = loadSavedResponses();
+      if (!list.length) return;
+      const headers = [
+        'Waktu', 'Nama', 'Peran',
+        'Q1_Kemudahan', 'Q2_UIUX', 'Q3_KasirPOS', 'Q4_StrukKode', 'Q5_KelolaStok',
+        'Q6_LaporanExcel', 'Q7_RestockMusiman', 'Q8_Kecepatan', 'Q9_KepuasanTotal',
+        'Rata_Rata', 'Persentase', 'Predikat', 'Rekomendasi', 'Area_Catatan', 'Komentar'
+      ];
+      const csvCell = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+      const rows = list.map(r => [
+        r.timestamp, r.name, r.role,
+        r.scores.q1, r.scores.q2, r.scores.q3, r.scores.q4, r.scores.q5,
+        r.scores.q6, r.scores.q7, r.scores.q8, r.scores.q9,
+        r.average, `${r.satisfactionPct}%`, r.predicate, r.recommend,
+        (r.tags || []).join('; '), r.comment
+      ].map(csvCell).join(','));
+
+      const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `rekap_kepuasan_pengguna_${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        a.remove();
+        URL.revokeObjectURL(url);
+      }, 2000);
+    });
+
+    document.getElementById('btn-clear-recap').addEventListener('click', () => {
+      if (!confirm('Hapus seluruh data rekap pengujian yang tersimpan di browser ini?')) return;
+      localStorage.removeItem(STORAGE_KEY);
+      renderRecap();
+    });
+
+    renderQuestions();
+    updateProgress();
+    renderRecap();
+  </script>
+</body>
+
+</html>
+

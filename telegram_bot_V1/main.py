@@ -52,6 +52,7 @@ from transaction_service import (
     apply_sale_stock,
     find_insufficient_stock,
     format_stock_error,
+    generate_invoice_no,
     save_line_items,
     settle_qris_paid,
     mark_qris_terminal,
@@ -971,7 +972,7 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.commit()
         db.refresh(new_trx)
         trx_id = new_trx.id
-        trx_no = f"INV-{trx_id:06d}"
+        trx_no = generate_invoice_no(db, now)
 
         # Save invoice_no back to the transaction
         new_trx.invoice_no = trx_no
@@ -1320,7 +1321,6 @@ async def handler_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🔧 *Untuk Admin:*\n"
         "▪️ /laporan — Laporan penjualan (harian/mingguan/bulanan)\n"
         "▪️ /void — Void/batalkan transaksi hari ini\n"
-        "▪️ /promo — Kelola promosi (tambah/edit/hapus)\n"
         "▪️ /jadwal — Kelola jadwal operasional toko\n"
         "▪️ 🎤 *Voice Note* — Kirim perintah suara untuk:\n"
         "   • Ubah harga produk\n"
@@ -1347,7 +1347,6 @@ async def post_init(application):
         BotCommand("riwayat", "📜 Riwayat transaksi"),
         BotCommand("laporan", "📊 Laporan penjualan (owner)"),
         BotCommand("void",    "❌ Void transaksi (owner)"),
-        BotCommand("promo",   "🏷️ Kelola promosi (owner)"),
         BotCommand("jadwal",  "🗓️ Kelola jadwal toko (owner)"),
         BotCommand("cancel",  "❌ Batalkan operasi"),
     ]
