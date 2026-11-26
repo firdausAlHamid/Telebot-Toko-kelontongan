@@ -1243,7 +1243,7 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
             total_discount=trx.total_discount,
             grand_total=trx.grand_total,
             recommendations=recommendations,
-            whatsapp_number=WHATSAPP_NUMBER,
+            telegram_username=context.bot.username or "tokociamis_bot",
             store_schedule=store_schedule,
             store_name=store_name,
             join_link=f"https://t.me/{context.bot.username}?start=toko_{tenant_id}"

@@ -1234,9 +1234,9 @@
       }
     }
 
-    function loadSafeQrisImage(imgEl, url) {
+    function loadSafeQrisImage(imgEl, url, forceRefresh = true) {
       if (!imgEl || !url) return;
-      if (blobImgCache[url]) {
+      if (!forceRefresh && blobImgCache[url]) {
         imgEl.src = blobImgCache[url];
         return;
       }
@@ -1244,7 +1244,11 @@
         console.warn('QRIS image load error for:', url);
       };
       if (url.startsWith('/uploads') || url.startsWith(window.location.origin)) {
-        fetch(url, { headers: { 'ngrok-skip-browser-warning': 'true' } })
+        const fetchUrl = `${url}${url.includes('?') ? '&' : '?'}_t=${Date.now()}`;
+        fetch(fetchUrl, {
+          cache: 'no-store',
+          headers: { 'ngrok-skip-browser-warning': 'true' }
+        })
           .then(res => {
             if (!res.ok) throw new Error('Img fetch failed');
             return res.blob();
@@ -1255,7 +1259,7 @@
             imgEl.src = blobUrl;
           })
           .catch(() => {
-            imgEl.src = url;
+            imgEl.src = fetchUrl;
           });
       } else {
         imgEl.src = url;
@@ -1428,15 +1432,14 @@
 
     async function fetchStoreDetails() {
       try {
-        const res = await fetch(`${API_BASE}/api/mini/store-info?tenant_id=${activeTenantId}`, {
+        const res = await fetch(`${API_BASE}/api/mini/store-info?tenant_id=${activeTenantId}&_t=${Date.now()}`, {
+          cache: 'no-store',
           headers: { 'ngrok-skip-browser-warning': 'true' }
         });
         if (res.ok) {
           const data = await res.json();
           if (data.store_name) document.getElementById('store-title-display').textContent = data.store_name;
-          if (data.qris_image_url) {
-            storeQrisImageUrl = data.qris_image_url;
-          }
+          storeQrisImageUrl = data.qris_image_url || null;
           renderCheckoutQrisPreview();
           
           const statusText = document.getElementById('store-status-text');
@@ -1698,6 +1701,7 @@
       document.getElementById('checkout-bottom-sheet').classList.add('active');
       renderSheetCartItems();
       renderCheckoutQrisPreview();
+      fetchStoreDetails();
     }
 
     function closeCheckoutModal() {

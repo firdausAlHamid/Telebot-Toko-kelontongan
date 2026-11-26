@@ -2764,6 +2764,57 @@
       color: #64748b !important;
     }
 
+    body.light-mode {
+      color-scheme: light;
+    }
+
+    body.light-mode .custom-input,
+    body.light-mode input.custom-input,
+    body.light-mode select.custom-input,
+    body.light-mode textarea.custom-input,
+    body.light-mode input[type="text"],
+    body.light-mode input[type="number"],
+    body.light-mode input[type="date"],
+    body.light-mode select,
+    body.light-mode textarea {
+      background: #f8fafc !important;
+      border-color: #cbd5e1 !important;
+      color: #0f172a !important;
+      color-scheme: light;
+    }
+
+    body.light-mode .custom-input::placeholder,
+    body.light-mode input::placeholder,
+    body.light-mode textarea::placeholder {
+      color: #94a3b8 !important;
+    }
+
+    body.light-mode .custom-input:focus,
+    body.light-mode .pos-search-box:focus {
+      border-color: var(--brand-green) !important;
+      background: #ffffff !important;
+      color: #0f172a !important;
+    }
+
+    body.light-mode select option {
+      background: #ffffff;
+      color: #0f172a;
+    }
+
+    body.light-mode .modal-card label {
+      color: #334155 !important;
+    }
+
+    body.light-mode .btn-close-x {
+      color: #475569;
+    }
+
+    body.light-mode .btn-pos-mode {
+      background: #f1f5f9;
+      border-color: #cbd5e1;
+      color: #0f172a;
+    }
+
     body.light-mode .btn-modal-cancel {
       border-color: #cbd5e1 !important;
       color: #475569 !important;
@@ -4604,7 +4655,9 @@
       <h3 style="font-size:16px; font-weight:800; margin-bottom:12px;">Tambah Produk Master</h3>
       <input type="text" id="m-prod-name" class="custom-input"
         placeholder="Nama Produk (misal: Beras Sentra Ramos 5kg)" />
-      <select id="m-prod-cat" class="custom-input" style="background:#1c2738;">
+      <input type="text" id="m-prod-sku" class="custom-input"
+        placeholder="Kode SKU Unik (opsional, kosongkan untuk otomatis)" />
+      <select id="m-prod-cat" class="custom-input">
         <option value="Sembako">Sembako</option>
         <option value="Makanan">Makanan</option>
         <option value="Minuman">Minuman</option>
@@ -5252,7 +5305,7 @@
     };
 
     let currentDataMode = localStorage.getItem('pos_data_mode') || 'simulasi';
-    let activeTenantId = (currentDataMode === 'asli') ? 3 : 2;
+    let activeTenantId = (currentDataMode === 'asli') ? 1 : 6;
 
     const headers = {
       'Content-Type': 'application/json',
@@ -5266,7 +5319,7 @@
       if (currentDataMode === mode) return;
       currentDataMode = mode;
       localStorage.setItem('pos_data_mode', mode);
-      activeTenantId = (mode === 'asli') ? 3 : 2;
+      activeTenantId = (mode === 'asli') ? 1 : 6;
       headers['X-Tenant-Id'] = String(activeTenantId);
 
       // Reset cart & active selections
@@ -5326,9 +5379,9 @@
     let currentEditProdId = null;
     const blobImgCache = {};
 
-    function loadSafeImage(imgEl, url) {
+    function loadSafeImage(imgEl, url, forceRefresh = false) {
       if (!url) return;
-      if (blobImgCache[url]) {
+      if (!forceRefresh && blobImgCache[url]) {
         imgEl.src = blobImgCache[url];
         return;
       }
@@ -5341,7 +5394,9 @@
 
       // If it's a relative URL or on current origin (like /uploads/...), fetch with ngrok bypass header
       if (url.startsWith('/uploads') || url.startsWith(window.location.origin)) {
-        fetch(url, {
+        const fetchUrl = forceRefresh ? `${url}${url.includes('?') ? '&' : '?'}_t=${Date.now()}` : url;
+        fetch(fetchUrl, {
+          cache: forceRefresh ? 'no-store' : 'default',
           headers: { 'ngrok-skip-browser-warning': 'true' }
         })
           .then(res => {
@@ -5354,7 +5409,7 @@
             applySrc(blobUrl);
           })
           .catch(() => {
-            applySrc(url);
+            applySrc(fetchUrl);
           });
       } else {
         applySrc(url);
@@ -7425,8 +7480,14 @@
         if (roleEl) roleEl.textContent = (data.role === 'owner' ? '👑 Owner' : '🧾 Kasir') + ' ⇄';
         if (data.full_name) document.getElementById('user-greeting').textContent = `Halo, ${data.full_name}!`;
 
+        if (data.role) {
+          currentRole = data.role;
+          localStorage.setItem('active_role', currentRole);
+        }
         if (data.role === 'owner') {
           document.querySelectorAll('.owner-only').forEach(el => el.style.display = '');
+        } else {
+          document.querySelectorAll('.owner-only').forEach(el => el.style.display = 'none');
         }
 
         const t = data.today || {};
@@ -8717,6 +8778,7 @@
 
     async function saveNewMasterProduct() {
       const name = document.getElementById('m-prod-name').value.trim();
+      const skuInput = (document.getElementById('m-prod-sku')?.value || '').trim();
       const cat = document.getElementById('m-prod-cat').value;
       const price = parseInt(document.getElementById('m-prod-price').value) || 0;
       const stockVal = document.getElementById('m-prod-stock').value;
@@ -8746,21 +8808,52 @@
           }
         }
 
-        const res = await fetch(`${API_BASE}/api/mini/product`, {
+        const payload = {
+          item_name: name,
+          sku: skuInput || null,
+          category: cat,
+          price,
+          stock,
+          image_url: uploadedImageUrl,
+          tenant_id: activeTenantId,
+          allow_duplicate: false
+        };
+
+        let res = await fetch(`${API_BASE}/api/mini/product`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ item_name: name, category: cat, price, stock, image_url: uploadedImageUrl, tenant_id: activeTenantId })
+          body: JSON.stringify(payload)
         });
+        let data = await res.json().catch(() => ({}));
+
+        if (res.status === 409) {
+          const warnMsg = data?.detail?.message || 'Nama produk mirip/sama dengan produk yang sudah ada.';
+          const proceed = confirm(`${warnMsg}\n\nApakah Anda tetap ingin menambahkan produk ini dengan kode SKU unik baru?`);
+          if (!proceed) return;
+
+          payload.allow_duplicate = true;
+          res = await fetch(`${API_BASE}/api/mini/product`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          data = await res.json().catch(() => ({}));
+        }
+
         if (res.ok) {
           closeAddProdModal();
-          alert('Produk berhasil ditambahkan!');
+          const skuText = data?.product?.sku ? `\nSKU: ${data.product.sku}` : '';
+          const warnText = data?.warning ? `\n\n${data.warning}` : '';
+          alert(`✅ Produk berhasil ditambahkan!${skuText}${warnText}`);
           // Reset form inputs
           document.getElementById('m-prod-name').value = '';
+          if (document.getElementById('m-prod-sku')) document.getElementById('m-prod-sku').value = '';
           document.getElementById('m-prod-price').value = '';
           document.getElementById('m-prod-stock').value = '100';
           await loadPosCatalog();
         } else {
-          alert('Gagal menambah produk.');
+          const errDetail = typeof data?.detail === 'string' ? data.detail : (data?.detail?.message || 'Gagal menambah produk.');
+          alert(errDetail);
         }
       } catch (e) {
         alert('Gagal menambah produk: koneksi bermasalah.');
@@ -8780,6 +8873,8 @@
         if (data.success) {
           alert(`✅ Token Kasir Berhasil Dibuat!\n\nToken: ${data.token}\n(Berlaku 48 jam)\n\nBagikan token ini ke kasir Anda.`);
           await loadKasirList();
+        } else {
+          alert(data.detail || data.message || 'Gagal generate token kasir.');
         }
       } catch (e) { alert('Gagal generate token.'); }
     }
@@ -8926,25 +9021,31 @@
       }
     }
 
-    async function loadStoreQrisData() {
+    async function loadStoreQrisData(forceRefresh = false) {
       try {
-        const res = await fetch(`${API_BASE}/api/mini/store-info?tenant_id=${activeTenantId}`);
+        const res = await fetch(`${API_BASE}/api/mini/store-info?tenant_id=${activeTenantId}&_t=${Date.now()}`, {
+          cache: 'no-store'
+        });
         if (res.ok) {
           const d = await res.json();
-          currentStoreQrisUrl = d.qris_image_url;
+          currentStoreQrisUrl = d.qris_image_url || null;
           const imgEl = document.getElementById('qris-current-img');
           const placeholder = document.getElementById('qris-empty-placeholder');
           const hint = document.getElementById('qris-file-name-hint');
 
           if (currentStoreQrisUrl) {
+            if (forceRefresh) {
+              delete blobImgCache[currentStoreQrisUrl];
+            }
             if (imgEl && placeholder) {
-              loadSafeImage(imgEl, currentStoreQrisUrl);
+              loadSafeImage(imgEl, currentStoreQrisUrl, true);
               imgEl.style.display = 'block';
               placeholder.style.display = 'none';
             }
             if (hint) hint.textContent = 'QRIS Toko Aktif';
           } else {
             if (imgEl && placeholder) {
+              imgEl.src = '';
               imgEl.style.display = 'none';
               placeholder.style.display = 'block';
             }
@@ -8992,9 +9093,13 @@
         });
         const saveData = await saveRes.json();
         if (saveRes.ok && saveData.success) {
+          if (currentStoreQrisUrl) delete blobImgCache[currentStoreQrisUrl];
           selectedQrisFile = null;
+          const fileInput = document.getElementById('qris-file-input');
+          if (fileInput) fileInput.value = '';
+          currentStoreQrisUrl = saveData.qris_image_url || uploadedUrl;
           alert('✅ Foto QRIS toko berhasil disimpan!');
-          await loadStoreQrisData();
+          await loadStoreQrisData(true);
         } else {
           alert(saveData.detail || saveData.message || 'Gagal menyimpan data QRIS toko.');
         }
@@ -9018,9 +9123,13 @@
         });
         const data = await res.json();
         if (res.ok && data.success) {
+          if (currentStoreQrisUrl) delete blobImgCache[currentStoreQrisUrl];
           selectedQrisFile = null;
+          currentStoreQrisUrl = null;
+          const fileInput = document.getElementById('qris-file-input');
+          if (fileInput) fileInput.value = '';
           alert('Foto QRIS toko berhasil dihapus.');
-          await loadStoreQrisData();
+          await loadStoreQrisData(true);
         } else {
           alert('Gagal menghapus foto QRIS.');
         }
@@ -9097,10 +9206,10 @@
       }
 
       container.innerHTML = currentOcrItems.map((item, idx) => `
-        <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06); border-radius:8px; padding:8px; margin-bottom:6px; display:flex; flex-direction:column; gap:4px;">
+        <div style="background:var(--surface-card); border:1px solid var(--border-card); border-radius:8px; padding:8px; margin-bottom:6px; display:flex; flex-direction:column; gap:4px;">
           <div style="display:flex; justify-content:space-between; align-items:center; gap:6px;">
             <input type="text" class="custom-input" style="margin-bottom:0; font-size:12px; font-weight:700; height:32px; flex:2;" value="${item.name || ''}" placeholder="Nama Barang" onchange="updateOcrItem(${idx}, 'name', this.value)" />
-            <select class="custom-input" style="margin-bottom:0; font-size:11px; height:32px; flex:1; background:#1c2738;" onchange="updateOcrItem(${idx}, 'category', this.value)">
+            <select class="custom-input" style="margin-bottom:0; font-size:11px; height:32px; flex:1;" onchange="updateOcrItem(${idx}, 'category', this.value)">
               <option value="Sembako" ${item.category === 'Sembako' ? 'selected' : ''}>Sembako</option>
               <option value="Makanan" ${item.category === 'Makanan' ? 'selected' : ''}>Makanan</option>
               <option value="Minuman" ${item.category === 'Minuman' ? 'selected' : ''}>Minuman</option>

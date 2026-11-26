@@ -21,7 +21,21 @@ from datetime import datetime, timedelta
 
 from database import SessionLocal, BotUser, Tenant, RegistrationToken
 
+try:
+    from config import OWNER_TELEGRAM_ID
+except Exception:
+    OWNER_TELEGRAM_ID = 0
+
 logger = logging.getLogger(__name__)
+
+
+def _is_super_owner(telegram_id: int) -> bool:
+    return bool(OWNER_TELEGRAM_ID and int(telegram_id) == int(OWNER_TELEGRAM_ID))
+
+
+def _default_tenant_id(db) -> int:
+    t = db.query(Tenant).filter(Tenant.is_active == True).order_by(Tenant.id).first()
+    return t.id if t else 1
 
 
 # ==============================================================================
@@ -45,7 +59,11 @@ def get_role(telegram_id: int) -> str:
     'unknown' means the user is not registered (no access).
     """
     user = _get_bot_user(telegram_id)
-    return user.role if user else "unknown"
+    if user:
+        return user.role
+    if _is_super_owner(telegram_id):
+        return "owner"
+    return "unknown"
 
 
 PERMISSIONS = {
@@ -111,7 +129,14 @@ def is_registered(telegram_id: int) -> bool:
 def get_tenant_id(telegram_id: int):
     """Return the tenant_id for a user, or None."""
     user = _get_bot_user(telegram_id)
-    return user.tenant_id if user else None
+    if user and user.tenant_id:
+        return user.tenant_id
+    if _is_super_owner(telegram_id):
+        db = SessionLocal()
+        tid = _default_tenant_id(db)
+        db.close()
+        return tid
+    return None
 
 
 def get_store_name(telegram_id: int) -> str | None:
@@ -299,8 +324,21 @@ def generate_kasir_token(owner_telegram_id: int) -> tuple[bool, str]:
     ).first()
 
     if not owner or not owner.tenant_id:
-        db.close()
-        return False, "Akun owner atau tenant tidak ditemukan."
+        if _is_super_owner(owner_telegram_id):
+            tid = _default_tenant_id(db)
+            owner = BotUser(
+                telegram_id=owner_telegram_id,
+                role="owner",
+                tenant_id=tid,
+                is_active=True,
+                full_name="Owner",
+            )
+            db.add(owner)
+            db.commit()
+            db.refresh(owner)
+        else:
+            db.close()
+            return False, "Akun owner atau tenant tidak ditemukan."
 
     token_str = "POS-KASIR-" + secrets.token_hex(4).upper()
     expires = datetime.now() + timedelta(hours=48)

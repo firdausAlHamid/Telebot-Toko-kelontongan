@@ -102,6 +102,7 @@ class Product(Base):
     __tablename__ = "products"
 
     id = Column(Integer, primary_key=True)
+    sku = Column(String(64), unique=True, nullable=True, index=True)
     category = Column(String(100))
     subcategory = Column(String(100))
     item_name = Column(String(255))
@@ -277,6 +278,11 @@ def _run_migrations(eng):
             res_itemized = conn.execute(text("SHOW COLUMNS FROM transactions LIKE 'is_itemized'")).fetchone()
             if not res_itemized:
                 conn.execute(text("ALTER TABLE transactions ADD COLUMN is_itemized TINYINT(1) NOT NULL DEFAULT 1"))
+                conn.commit()
+
+            res_sku = conn.execute(text("SHOW COLUMNS FROM products LIKE 'sku'")).fetchone()
+            if not res_sku:
+                conn.execute(text("ALTER TABLE products ADD COLUMN sku VARCHAR(64) NULL, ADD UNIQUE INDEX idx_products_sku (sku)"))
                 conn.commit()
     except Exception:
         pass

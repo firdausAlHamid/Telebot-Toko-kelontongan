@@ -43,6 +43,11 @@ from database import (
 from sqlalchemy import func, desc
 from receipt_generator import generate_receipt_image
 import qris_service
+from sku_service import (
+    generate_unique_sku,
+    find_similar_products,
+    format_similarity_warning,
+)
 from transaction_service import (
     apply_sale_stock,
     restore_sale_stock,
@@ -147,6 +152,8 @@ class ProductManageRequest(BaseModel):
     stock: int = 0
     image_url: str | None = None
     tenant_id: int | None = None
+    sku: str | None = None
+    allow_duplicate: bool = True
 
 
 class PosCheckoutRequest(BaseModel):
@@ -259,6 +266,20 @@ def get_user_from_init_data(init_data: str, request: Request = None):
             BotUser.telegram_id == telegram_id,
             BotUser.is_active == True,
         ).first()
+        if not user and OWNER_TELEGRAM_ID and int(telegram_id) == int(OWNER_TELEGRAM_ID):
+            first_t = db.query(Tenant).filter(Tenant.is_active == True).order_by(Tenant.id).first()
+            tid = first_t.id if first_t else 1
+            user = BotUser(
+                telegram_id=int(telegram_id),
+                telegram_username=tg_user.get("username"),
+                full_name=tg_user.get("first_name") or "Owner",
+                role="owner",
+                tenant_id=tid,
+                is_active=True,
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
 
     # Fallback for browser / ngrok testing (outside Telegram WebApp)
     if not user:
@@ -330,6 +351,20 @@ def get_current_user(request: Request) -> AuthUser:
                 BotUser.telegram_id == tg_id,
                 BotUser.is_active == True
             ).first()
+            if not user and OWNER_TELEGRAM_ID and int(tg_id) == int(OWNER_TELEGRAM_ID):
+                first_t = db.query(Tenant).filter(Tenant.is_active == True).order_by(Tenant.id).first()
+                tid = first_t.id if first_t else 1
+                user = BotUser(
+                    telegram_id=int(tg_id),
+                    telegram_username=tg_data.get("username"),
+                    full_name=tg_data.get("first_name") or "Owner",
+                    role="owner",
+                    tenant_id=tid,
+                    is_active=True,
+                )
+                db.add(user)
+                db.commit()
+                db.refresh(user)
             if not user:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
@@ -2399,7 +2434,9 @@ async def mini_catalog(tenant_id: int | None = None, category: str | None = None
     if q and q.strip():
         search_term = f"%{q.strip()}%"
         prod_query = prod_query.filter(
-            (Product.item_name.ilike(search_term)) | (Product.subcategory.ilike(search_term))
+            (Product.item_name.ilike(search_term))
+            | (Product.subcategory.ilike(search_term))
+            | (Product.sku.ilike(search_term))
         )
 
     products = prod_query.order_by(Product.category, Product.item_name).all()
@@ -2448,6 +2485,7 @@ async def mini_catalog(tenant_id: int | None = None, category: str | None = None
 
         items.append({
             "id": p.id,
+            "sku": p.sku,
             "item_name": p.item_name,
             "category": p.category,
             "subcategory": p.subcategory,
@@ -2722,7 +2760,7 @@ async def get_receipt_image(invoice_no: str):
         total_discount=trx.total_discount or 0,
         grand_total=trx.grand_total or trx.subtotal or 0,
         recommendations=recommendations,
-        whatsapp_number="628123456789",
+        telegram_username="tokociamis_bot",
         store_name=store_name
     )
     db.close()
@@ -3415,6 +3453,23 @@ async def mini_user_role(request: Request, user_id: int | None = None, role: str
     }
 
 
+@app.get("/api/mini/product/check-duplicate")
+async def mini_check_duplicate_product(
+    name: str,
+    tenant_id: int | None = None,
+    exclude_id: int | None = None,
+):
+    """Check whether a product name duplicates or closely resembles existing products."""
+    db = SessionLocal()
+    similar = find_similar_products(db, name, tenant_id=tenant_id, exclude_id=exclude_id)
+    db.close()
+    return {
+        "has_similar": len(similar) > 0,
+        "similar_products": similar,
+        "warning": format_similarity_warning(similar),
+    }
+
+
 @app.post("/api/mini/product")
 async def mini_create_product(
     req: ProductManageRequest,
@@ -3424,9 +3479,37 @@ async def mini_create_product(
     db = SessionLocal()
     tid = req.tenant_id or current_user.tenant_id or 2
 
+    clean_name = req.item_name.strip()
     clean_stock = max(0, min(int(req.stock or 0), 99999))
     clean_price = max(0, int(req.price or 0))
     clean_cat = (req.category or "Lainnya").strip()
+
+    # Validasi atau generate SKU unik
+    custom_sku = (req.sku or "").strip().upper()
+    if custom_sku:
+        sku_exists = db.query(Product.id).filter(Product.sku == custom_sku).first()
+        if sku_exists:
+            db.close()
+            raise HTTPException(
+                status_code=400,
+                detail=f"SKU '{custom_sku}' sudah digunakan oleh produk lain. Gunakan SKU lain atau kosongkan untuk otomatis."
+            )
+        sku_val = custom_sku
+    else:
+        sku_val = generate_unique_sku(db, clean_name, clean_cat, tid)
+
+    # Deteksi kemiripan / duplikasi nama produk
+    similar = find_similar_products(db, clean_name, tenant_id=tid)
+    warning_msg = format_similarity_warning(similar)
+    if similar and not req.allow_duplicate:
+        db.close()
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": warning_msg,
+                "similar_products": similar,
+            },
+        )
 
     # Pastikan kategori tersimpan di tabel categories database
     if clean_cat:
@@ -3443,9 +3526,10 @@ async def mini_create_product(
 
     new_prod = Product(
         id=new_id,
+        sku=sku_val,
         category=clean_cat,
         subcategory=req.subcategory or clean_cat,
-        item_name=req.item_name.strip(),
+        item_name=clean_name,
         price=clean_price,
         stock=clean_stock,
         image_url=req.image_url,
@@ -3458,9 +3542,12 @@ async def mini_create_product(
 
     return {
         "success": True,
-        "message": f"Produk '{req.item_name}' berhasil ditambahkan!",
+        "message": f"Produk '{clean_name}' berhasil ditambahkan!",
+        "warning": warning_msg,
+        "similar_products": similar,
         "product": {
             "id": new_prod.id,
+            "sku": new_prod.sku,
             "item_name": new_prod.item_name,
             "category": new_prod.category,
             "price": new_prod.price,

@@ -20,6 +20,7 @@ from telegram.ext import (
 
 from database import SessionLocal, Product, Category
 from auth import require, get_tenant_id
+from sku_service import generate_unique_sku, find_similar_products, format_similarity_warning
 from menu_helpers import show_main_menu
 
 logger = logging.getLogger(__name__)
@@ -176,9 +177,16 @@ async def product_add_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     context.user_data["new_product_name"] = text
     tenant_id = get_tenant_id(update.effective_user.id)
+
+    db = SessionLocal()
+    similar = find_similar_products(db, text, tenant_id=tenant_id)
+    warning_msg = format_similarity_warning(similar)
+    db.close()
+
     kb = _categories_keyboard("add_cat", tenant_id)
+    prefix = f"{warning_msg}\n\n" if warning_msg else ""
     await update.message.reply_text(
-        f"Nama: *{text}*\n\nPilih kategori dari tombol, atau *ketik nama kategori baru*:",
+        f"{prefix}Nama: *{text}*\n\nPilih kategori dari tombol, atau *ketik nama kategori baru*:",
         reply_markup=kb, parse_mode="Markdown"
     )
     return PRODUCT_ADD_CAT
@@ -251,9 +259,13 @@ async def product_add_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     db = SessionLocal()
     tenant_id = get_tenant_id(update.effective_user.id)
+    p_name_input = context.user_data.get("new_product_name")
+    p_cat_input = context.user_data.get("new_product_full_category")
+    sku_val = generate_unique_sku(db, p_name_input, p_cat_input, tenant_id)
     product = Product(
-        item_name=context.user_data.get("new_product_name"),
-        category=context.user_data.get("new_product_full_category"),
+        sku=sku_val,
+        item_name=p_name_input,
+        category=p_cat_input,
         subcategory=context.user_data.get("new_product_category"),
         price=price,
         stock=0,
@@ -267,11 +279,13 @@ async def product_add_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     p_cat = product.category
     p_price = product.price
     p_id = product.id
+    p_sku = product.sku
     db.close()
 
     await update.message.reply_text(
         f"✅ *Produk berhasil ditambahkan!*\n\n"
         f"📦 Nama: *{p_name}*\n"
+        f"🔖 SKU: `{p_sku}`\n"
         f"🏷️ Kategori: {p_cat}\n"
         f"💰 Harga: Rp{p_price:,}\n"
         f"🆔 ID: #{p_id}",

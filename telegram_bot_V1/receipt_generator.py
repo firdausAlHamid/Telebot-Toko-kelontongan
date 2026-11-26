@@ -34,7 +34,7 @@ def generate_receipt_image(
     trx_no, date_str, cart_items, total, payment_method,
     discount_details=None, total_discount=0, grand_total=None,
     recommendations=None, whatsapp_number=None, store_schedule=None,
-    store_name="TOKO KELONTONG", join_link=None
+    store_name="TOKO KELONTONG", join_link=None, telegram_username="tokociamis_bot"
 ):
     """
     Generates a 58mm thermal-printer compatible receipt image.
@@ -177,17 +177,18 @@ def generate_receipt_image(
         draw.text(((WIDTH - get_text_width(line, font_bold)) / 2, y), line, font=font_bold, fill='black')
         y += 30
     
-    # WhatsApp QR Code
-    if whatsapp_number:
+    # Telegram QR Code (replaces legacy WhatsApp QR)
+    if telegram_username and not join_link:
         y += 20
-        wa_url = f"https://wa.me/{whatsapp_number}"
+        tg_user = str(telegram_username).lstrip("@").strip()
+        tg_url = f"https://t.me/{tg_user}"
         qr = qrcode.QRCode(
             version=1,
             error_correction=qrcode.constants.ERROR_CORRECT_L,
             box_size=5,
             border=1,
         )
-        qr.add_data(wa_url)
+        qr.add_data(tg_url)
         qr.make(fit=True)
         
         qr_img = qr.make_image(fill_color="black", back_color="white")
@@ -198,7 +199,7 @@ def generate_receipt_image(
         img.paste(qr_pil, (int((WIDTH - qr_w) / 2), y))
         y += qr_h + 10
         
-        qr_text = "Hubungi Kami via WhatsApp"
+        qr_text = "Hubungi Kami via Telegram"
         draw.text(((WIDTH - get_text_width(qr_text, font_small)) / 2, y), qr_text, font=font_small, fill='black')
         y += 30
         

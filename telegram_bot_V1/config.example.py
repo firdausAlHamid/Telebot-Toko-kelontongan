@@ -8,6 +8,9 @@ HOW TO USE:
 """
 
 import os
+from dotenv import load_dotenv
+
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"), override=True)
 
 # --- Bot Token ---
 # Get from @BotFather on Telegram
@@ -29,6 +32,7 @@ API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 # This ID can always use /panel even without registering via the website.
 # Get your Telegram ID from @userinfobot on Telegram.
 OWNER_TELEGRAM_ID = int(os.getenv("OWNER_TELEGRAM_ID", "0"))
+DEV_TELEGRAM_IDS = [int(x) for x in os.getenv("DEV_TELEGRAM_IDS", "").split(",") if x.strip().isdigit()]
 
 # --- WhatsApp QR on Receipt ---
 # Format: country code + number, no + sign
