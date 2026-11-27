@@ -10,7 +10,7 @@
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -63,7 +63,7 @@
       --radius-lg: 18px;
       --radius-full: 9999px;
 
-      --font-main: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-main: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     }
 
     body {
@@ -73,6 +73,9 @@
       min-height: 100vh;
       overflow-x: hidden;
       user-select: none;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      text-rendering: optimizeLegibility;
     }
 
     /* ── Header Modern & Bersih (Sesuai Desain Baru) ── */
@@ -2557,9 +2560,9 @@
       --surface2: #f1f5f9;
       --border-card: #e2e8f0;
 
-      --text-white: #0f172a;
-      --text-sub: #64748b;
-      --text-dim: #94a3b8;
+      --text-white: #1e293b;
+      --text-sub: #475569;
+      --text-dim: #64748b;
 
       --brand-green: #16a34a;
       --brand-green-hover: #15803d;
@@ -2570,7 +2573,7 @@
       --blue: #0284c7;
 
       background: #f8fafc;
-      color: #0f172a;
+      color: #1e293b;
     }
 
     body.light-mode .header {
@@ -2579,11 +2582,11 @@
     }
 
     body.light-mode .header-name {
-      color: #0f172a;
+      color: #1e293b;
     }
 
     body.light-mode .header-meta {
-      color: #64748b;
+      color: #475569;
     }
 
     body.light-mode .btn-customer-switch-pill {
@@ -2630,8 +2633,12 @@
     }
 
     body.light-mode .tab-btn.active {
-      color: #0f172a;
+      color: #1e293b;
       border-bottom-color: var(--brand-green);
+    }
+
+    body.light-mode .btn-add-prod-pill {
+      color: #ffffff;
     }
 
     body.light-mode .pos-search-box {
