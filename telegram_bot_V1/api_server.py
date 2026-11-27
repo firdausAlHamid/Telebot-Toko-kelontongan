@@ -3453,6 +3453,19 @@ async def mini_user_role(request: Request, user_id: int | None = None, role: str
     }
 
 
+@app.get("/api/mini/product/next-sku")
+async def mini_preview_next_sku(
+    name: str = "Produk",
+    category: str = "Umum",
+    tenant_id: int | None = None,
+):
+    """Preview the next auto-incremented unique SKU for a new product."""
+    db = SessionLocal()
+    sku = generate_unique_sku(db, name or "Produk", category, tenant_id)
+    db.close()
+    return {"sku": sku}
+
+
 @app.get("/api/mini/product/check-duplicate")
 async def mini_check_duplicate_product(
     name: str,
@@ -3570,11 +3583,42 @@ async def mini_update_product(
         db.close()
         raise HTTPException(status_code=404, detail="Produk tidak ditemukan.")
 
+    clean_name = req.item_name.strip()
     clean_stock = max(0, min(int(req.stock or 0), 99999))
     clean_price = max(0, int(req.price or 0))
     clean_cat = (req.category or prod.category or "Lainnya").strip()
 
     tid = prod.tenant_id or req.tenant_id or current_user.tenant_id or 2
+
+    # Validasi SKU unik saat update
+    custom_sku = (req.sku or "").strip().upper()
+    if custom_sku:
+        sku_conflict = db.query(Product).filter(
+            Product.sku == custom_sku,
+            Product.id != product_id,
+        ).first()
+        if sku_conflict:
+            db.close()
+            raise HTTPException(
+                status_code=400,
+                detail=f"SKU '{custom_sku}' sudah digunakan oleh produk '{sku_conflict.item_name}'."
+            )
+        prod.sku = custom_sku
+    elif not prod.sku:
+        prod.sku = generate_unique_sku(db, clean_name, clean_cat, tid)
+
+    # Deteksi kemiripan / duplikasi nama produk (kecuali dirinya sendiri)
+    similar = find_similar_products(db, clean_name, tenant_id=tid, exclude_id=product_id)
+    warning_msg = format_similarity_warning(similar)
+    if similar and not req.allow_duplicate:
+        db.close()
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": warning_msg,
+                "similar_products": similar,
+            },
+        )
 
     # Pastikan kategori tersimpan di tabel categories database
     if clean_cat:
@@ -3585,7 +3629,7 @@ async def mini_update_product(
         if not cat_exists:
             db.add(Category(tenant_id=tid, name=clean_cat, icon="📦"))
 
-    prod.item_name = req.item_name.strip()
+    prod.item_name = clean_name
     prod.category = clean_cat
     if req.subcategory:
         prod.subcategory = req.subcategory
@@ -3604,8 +3648,11 @@ async def mini_update_product(
     return {
         "success": True,
         "message": f"Produk '{prod.item_name}' berhasil diperbarui!",
+        "warning": warning_msg,
+        "similar_products": similar,
         "product": {
             "id": prod.id,
+            "sku": prod.sku,
             "item_name": prod.item_name,
             "category": prod.category,
             "price": prod.price,

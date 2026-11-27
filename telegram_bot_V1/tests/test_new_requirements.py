@@ -100,6 +100,50 @@ def test_unique_sku_and_duplicate_warning():
         chk = client.get("/api/mini/product/check-duplicate", params={"name": "Produk Uji Unik Zx9182", "tenant_id": 1})
         assert chk.status_code == 200
         assert chk.json()["has_similar"] is True
+
+        # Next-SKU auto-increment preview endpoint
+        nxt = client.get("/api/mini/product/next-sku", params={"name": "Produk Uji Unik Zx9182", "category": "Minuman", "tenant_id": 1})
+        assert nxt.status_code == 200
+        assert nxt.json()["sku"].startswith("SKU-MIN-PRO-")
+
+        # Read: search by SKU in catalog
+        cat_res = client.get("/api/mini/catalog", params={"tenant_id": 1, "q": d1["product"]["sku"]})
+        assert cat_res.status_code == 200
+        assert any(p["id"] == d1["product"]["id"] for p in cat_res.json()["products"])
+
+        # Update (PUT): conflict SKU -> 400
+        upd_conflict = client.put(
+            f"/api/mini/product/{d3['product']['id']}",
+            json={
+                "item_name": "Produk Uji Unik Zx9182 Updated",
+                "category": "Minuman",
+                "price": 16000,
+                "stock": 8,
+                "sku": d1["product"]["sku"],
+                "allow_duplicate": True,
+            },
+        )
+        assert upd_conflict.status_code == 400
+
+        # Update (PUT): valid SKU update -> 200
+        upd_ok = client.put(
+            f"/api/mini/product/{d3['product']['id']}",
+            json={
+                "item_name": "Produk Uji Unik Zx9182 Edited",
+                "category": "Minuman",
+                "price": 16000,
+                "stock": 8,
+                "sku": "SKU-TEST-CUSTOM-9981",
+                "allow_duplicate": True,
+            },
+        )
+        assert upd_ok.status_code == 200
+        assert upd_ok.json()["product"]["sku"] == "SKU-TEST-CUSTOM-9981"
+
+        # Delete (DELETE): Owner deletes product
+        del_res = client.delete(f"/api/mini/product/{d3['product']['id']}")
+        assert del_res.status_code == 200
+        created_ids.remove(d3["product"]["id"])
     finally:
         app.dependency_overrides.clear()
         if created_ids:
@@ -135,6 +179,11 @@ def test_dynamic_light_dark_mode_css():
     assert "body.light-mode select option" in html
     assert "color-scheme: light;" in html
     assert 'id="m-prod-cat" class="custom-input" style="background:#1c2738;"' not in html
+    assert 'id="sku-directory-tbody"' in html
+    assert 'id="m-prod-sku-ref-select"' in html
+    assert 'id="m-prod-name-warning"' in html
+    assert 'id="m-prod-sku-error"' in html
+    assert 'id="edit-prod-sku"' in html
 
 
 def test_owner_can_generate_kasir_token():
@@ -189,3 +238,6 @@ def test_qris_photo_sync():
     idx_html = (BASE_DIR / "miniapp" / "index.html").read_text(encoding="utf-8")
     assert "cache: 'no-store'" in dash_html
     assert "cache: 'no-store'" in idx_html
+    assert "(currentDataMode === 'asli') ? 1 : 6" in dash_html
+    assert "(currentDataMode === 'asli') ? 1 : 6" in idx_html
+    assert "quickAddStock(" in dash_html

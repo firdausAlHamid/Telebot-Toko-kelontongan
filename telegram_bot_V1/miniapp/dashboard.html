@@ -4473,6 +4473,44 @@
           <div class="pa-skeleton" style="height:120px;">Memuat ringkasan kategori...</div>
         </div>
       </div>
+
+      <!-- Tabel Daftar SKU & Produk (Full CRUD) -->
+      <div class="stat-card" id="sku-directory-card" style="padding:16px 18px; margin-top:12px; text-align:left;">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:4px;">
+          <div class="cat-stock-card-title" style="margin-bottom:0;">Daftar SKU &amp; Produk</div>
+          <span id="sku-directory-count" style="font-size:11px; font-weight:700; color:var(--brand-green);">0 produk</span>
+        </div>
+        <div style="font-size:11px; color:var(--text-sub); margin-bottom:10px; line-height:1.4;">
+          1 Produk = 1 Kode SKU unik (otomatis dibuat saat tambah produk baru). Ketik SKU atau nama untuk mencari, lalu edit/hapus langsung dari tabel.
+        </div>
+        <div style="display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap;">
+          <input type="text" id="sku-table-search" class="pos-search-box" style="flex:2; min-width:150px; margin-bottom:0;"
+            placeholder="Cari SKU atau nama produk..." oninput="renderSkuDirectoryTable()" />
+          <select id="sku-table-cat-filter" class="pa-sort-select" style="flex:1; min-width:120px;"
+            onchange="renderSkuDirectoryTable()">
+            <option value="Semua">Semua Kategori</option>
+          </select>
+        </div>
+        <div class="ledger-table-wrap" style="max-height:320px; overflow-y:auto;">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                <th>SKU</th>
+                <th>Produk</th>
+                <th>Kategori</th>
+                <th style="text-align:right;">Harga</th>
+                <th style="text-align:right;">Stok</th>
+                <th style="text-align:center;">Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="sku-directory-tbody">
+              <tr>
+                <td colspan="6" style="text-align:center; padding:16px;">Memuat daftar SKU...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
 
     <!-- ════ TAB 5: KELOLA PEMBAYARAN QRIS ════ -->
@@ -4651,19 +4689,48 @@
 
   <!-- ── MODAL TAMBAH PRODUK BARU ── -->
   <div class="modal-overlay" id="add-prod-modal">
-    <div class="modal-card" style="text-align:left;">
-      <h3 style="font-size:16px; font-weight:800; margin-bottom:12px;">Tambah Produk Master</h3>
+    <div class="modal-card" style="text-align:left; max-height:90vh; overflow-y:auto;">
+      <h3 style="font-size:16px; font-weight:800; margin-bottom:4px;">Tambah Produk Master</h3>
+      <div style="font-size:11px; color:var(--text-sub); margin-bottom:12px;">
+        SKU berlaku <b>per produk</b> dan otomatis dibuat berurutan (auto-increment) untuk produk baru.
+      </div>
+
+      <label style="font-size:11px; font-weight:700; color:var(--text-sub); display:block; margin-bottom:4px;">Nama Produk</label>
       <input type="text" id="m-prod-name" class="custom-input"
-        placeholder="Nama Produk (misal: Beras Sentra Ramos 5kg)" />
-      <input type="text" id="m-prod-sku" class="custom-input"
-        placeholder="Kode SKU Unik (opsional, kosongkan untuk otomatis)" />
-      <select id="m-prod-cat" class="custom-input">
+        placeholder="Nama Produk (misal: Beras Sentra Ramos 5kg)"
+        oninput="onAddProdNameOrCatChange()" />
+      <div id="m-prod-name-warning" style="display:none; margin:-4px 0 10px; padding:8px 10px; border-radius:8px; background:rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.4); color:#fbbf24; font-size:11px; line-height:1.4;"></div>
+
+      <label style="font-size:11px; font-weight:700; color:var(--text-sub); display:block; margin-bottom:4px;">Kategori</label>
+      <select id="m-prod-cat" class="custom-input" onchange="onAddProdNameOrCatChange()">
         <option value="Sembako">Sembako</option>
         <option value="Makanan">Makanan</option>
         <option value="Minuman">Minuman</option>
         <option value="Kebersihan">Kebersihan</option>
         <option value="Obat & Mandi">Obat & Mandi</option>
       </select>
+
+      <label style="font-size:11px; font-weight:700; color:var(--text-sub); display:block; margin-bottom:4px;">
+        Kode SKU Produk (Auto-Increment / Custom)
+      </label>
+      <div style="display:flex; gap:6px; align-items:center; margin-bottom:6px;">
+        <input type="text" id="m-prod-sku" class="custom-input" style="margin-bottom:0; flex:1; font-family:monospace; font-weight:700;"
+          placeholder="Otomatis terisi..." oninput="validateManualSkuInput()" />
+        <button type="button" class="btn-pos-mode" style="height:38px; padding:0 10px; font-size:11px; white-space:nowrap;"
+          onclick="refreshAutoSkuPreview(true)" title="Generate ulang SKU otomatis">
+          🔄 Auto
+        </button>
+      </div>
+      <div id="m-prod-sku-error" style="display:none; margin:0 0 8px; padding:7px 10px; border-radius:8px; background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.4); color:#f87171; font-size:11px; line-height:1.4;"></div>
+
+      <label style="font-size:10.5px; font-weight:600; color:var(--text-dim); display:block; margin-bottom:4px;">
+        Lihat / Cek Daftar SKU yang Sudah Ada (Dropdown Referensi):
+      </label>
+      <select id="m-prod-sku-ref-select" class="custom-input" style="font-size:11px; margin-bottom:10px;"
+        onchange="onSkuRefSelect(this)">
+        <option value="">-- Daftar SKU Terdaftar (klik untuk lihat/cek) --</option>
+      </select>
+
       <input type="number" id="m-prod-price" class="custom-input" placeholder="Harga Jual (Rp)" />
       <input type="number" id="m-prod-stock" class="custom-input" min="0" placeholder="Stok Awal (misal: 10)"
         value="0" />
@@ -4897,6 +4964,13 @@
           Produk</label>
         <input type="text" class="custom-input" id="edit-prod-name" placeholder="Nama Produk"
           style="width: 100%; height: 38px; border-radius: 8px;" />
+      </div>
+
+      <div class="custom-field" style="margin-bottom: 10px;">
+        <label class="custom-label"
+          style="font-size: 11px; font-weight: 700; color: var(--text-sub); display: block; margin-bottom: 4px;">Kode SKU Unik</label>
+        <input type="text" class="custom-input" id="edit-prod-sku" placeholder="SKU Produk (unik)"
+          style="width: 100%; height: 38px; border-radius: 8px; font-family: monospace; font-weight: 700;" />
       </div>
 
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
@@ -6853,6 +6927,8 @@
 
         renderCategoryChips();
         renderPosGrid();
+        renderSkuDirectoryTable();
+        populateSkuRefDropdown();
       } catch (err) {
         console.error('Error load catalog:', err);
       }
@@ -6878,7 +6954,10 @@
         filtered = filtered.filter(p => p.category === activePosCat);
       }
       if (query) {
-        filtered = filtered.filter(p => p.item_name.toLowerCase().includes(query));
+        filtered = filtered.filter(p =>
+          p.item_name.toLowerCase().includes(query) ||
+          (p.sku && p.sku.toLowerCase().includes(query))
+        );
       }
 
       if (!filtered.length) {
@@ -7730,6 +7809,9 @@
       document.getElementById('edit-prod-id').value = prod.id;
       document.getElementById('edit-prod-id-badge').textContent = `ID #${prod.id}`;
       document.getElementById('edit-prod-name').value = prod.item_name || prod.name || '';
+      if (document.getElementById('edit-prod-sku')) {
+        document.getElementById('edit-prod-sku').value = prod.sku || '';
+      }
       document.getElementById('edit-prod-price').value = prod.price || 0;
       document.getElementById('edit-prod-stock').value = (prod.stock !== null && prod.stock !== undefined) ? prod.stock : 0;
 
@@ -7789,6 +7871,7 @@
     async function saveEditProduct() {
       const id = parseInt(document.getElementById('edit-prod-id').value);
       const name = document.getElementById('edit-prod-name').value.trim();
+      const skuVal = (document.getElementById('edit-prod-sku')?.value || '').trim().toUpperCase();
       const cat = document.getElementById('edit-prod-cat').value;
       const price = parseInt(document.getElementById('edit-prod-price').value) || 0;
       const stockVal = document.getElementById('edit-prod-stock').value;
@@ -7823,28 +7906,47 @@
           }
         }
 
-        const res = await fetch(`${API_BASE}/api/mini/product/${id}`, {
+        const payload = {
+          item_name: name,
+          sku: skuVal || null,
+          category: cat,
+          price: price,
+          stock: stock,
+          image_url: finalImageUrl,
+          tenant_id: activeTenantId,
+          allow_duplicate: false
+        };
+
+        let res = await fetch(`${API_BASE}/api/mini/product/${id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            item_name: name,
-            category: cat,
-            price: price,
-            stock: stock,
-            image_url: finalImageUrl,
-            tenant_id: activeTenantId
-          })
+          body: JSON.stringify(payload)
         });
+        let data = await res.json().catch(() => ({}));
 
-        const data = await res.json();
+        if (res.status === 409) {
+          const warnMsg = data?.detail?.message || 'Nama produk mirip/sama dengan produk lain.';
+          const proceed = confirm(`${warnMsg}\n\nTetap simpan perubahan nama produk ini?`);
+          if (!proceed) return;
+          payload.allow_duplicate = true;
+          res = await fetch(`${API_BASE}/api/mini/product/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          data = await res.json().catch(() => ({}));
+        }
+
         if (res.ok && data.success) {
-          alert(`✅ Produk "${name}" berhasil diperbarui!`);
+          const savedSku = data?.product?.sku ? `\nSKU: ${data.product.sku}` : '';
+          alert(`✅ Produk "${name}" berhasil diperbarui!${savedSku}`);
           closeEditProdModal();
           await loadPosCatalog();
           await loadProductAnalyticsList();
           await loadDashboardData();
         } else {
-          alert(data.detail || data.message || 'Gagal menyimpan perubahan produk.');
+          const errMsg = typeof data?.detail === 'string' ? data.detail : (data?.detail?.message || data?.message || 'Gagal menyimpan perubahan produk.');
+          alert(errMsg);
         }
       } catch (err) {
         alert('Terjadi kesalahan koneksi saat menyimpan produk.');
@@ -8751,8 +8853,209 @@
       });
     }
 
+    // ── SKU Directory Table, Dropdown & Live Validation UX ──
+    let isManualSkuEdited = false;
+    let addProdDebounceTimer = null;
+
+    function populateSkuRefDropdown() {
+      const sel = document.getElementById('m-prod-sku-ref-select');
+      const catFilter = document.getElementById('sku-table-cat-filter');
+
+      if (sel) {
+        const sorted = [...allCatalogProducts].sort((a, b) => (a.item_name || '').localeCompare(b.item_name || ''));
+        sel.innerHTML = `<option value="">-- Daftar SKU Terdaftar (${sorted.length} produk) --</option>` +
+          sorted.map(p => `<option value="${escHtml(p.sku || '')}">${escHtml(p.sku || '-')} — ${escHtml(p.item_name)} (${escHtml(p.category || '-')})</option>`).join('');
+      }
+
+      if (catFilter) {
+        const curVal = catFilter.value || 'Semua';
+        const cats = [...new Set(allCatalogProducts.map(p => p.category).filter(Boolean))].sort();
+        catFilter.innerHTML = `<option value="Semua">Semua Kategori</option>` +
+          cats.map(c => `<option value="${escHtml(c)}" ${c === curVal ? 'selected' : ''}>${escHtml(c)}</option>`).join('');
+      }
+    }
+
+    function renderSkuDirectoryTable() {
+      const tbody = document.getElementById('sku-directory-tbody');
+      const countEl = document.getElementById('sku-directory-count');
+      if (!tbody) return;
+
+      const q = (document.getElementById('sku-table-search')?.value || '').trim().toLowerCase();
+      const cat = document.getElementById('sku-table-cat-filter')?.value || 'Semua';
+
+      let rows = allCatalogProducts;
+      if (cat !== 'Semua') {
+        rows = rows.filter(p => p.category === cat);
+      }
+      if (q) {
+        rows = rows.filter(p =>
+          (p.item_name && p.item_name.toLowerCase().includes(q)) ||
+          (p.sku && p.sku.toLowerCase().includes(q)) ||
+          (p.category && p.category.toLowerCase().includes(q))
+        );
+      }
+
+      if (countEl) countEl.textContent = `${rows.length} produk`;
+
+      if (!rows.length) {
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding:16px; color:var(--text-sub);">Tidak ada produk yang cocok.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = rows.slice(0, 100).map(p => `
+        <tr>
+          <td style="font-family:monospace; font-size:11px; font-weight:700; white-space:nowrap;">${escHtml(p.sku || '-')}</td>
+          <td style="font-weight:600;">${escHtml(p.item_name)}</td>
+          <td style="font-size:11px; color:var(--text-sub);">${escHtml(p.category || '-')}</td>
+          <td style="text-align:right; white-space:nowrap;">${fmtRp(p.price)}</td>
+          <td style="text-align:right; font-weight:700; color:${(p.stock || 0) <= 5 ? 'var(--danger)' : 'var(--brand-green)'};">${p.stock ?? 0}</td>
+          <td style="text-align:center; white-space:nowrap;">
+            <button type="button" style="background:rgba(34,197,94,0.15); border:1px solid rgba(34,197,94,0.35); color:#4ade80; border-radius:6px; padding:3px 7px; font-size:11px; cursor:pointer; margin-right:4px;" onclick="quickAddStock(${p.id}, '${escHtml(p.item_name).replace(/'/g, "\\'")}', ${p.stock ?? 0})" title="Tambah Stok">+Stok</button>
+            <button type="button" style="background:rgba(59,130,246,0.15); border:1px solid rgba(59,130,246,0.35); color:#60a5fa; border-radius:6px; padding:3px 7px; font-size:11px; cursor:pointer; margin-right:4px;" onclick="openEditProductModal(${p.id})" title="Edit Produk">✏️</button>
+            <button type="button" style="background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.35); color:#f87171; border-radius:6px; padding:3px 7px; font-size:11px; cursor:pointer;" onclick="deleteSkuProduct(${p.id}, '${escHtml(p.item_name).replace(/'/g, "\\'")}')" title="Hapus Produk">🗑</button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    async function quickAddStock(id, name, currStock) {
+      const prod = allCatalogProducts.find(p => p.id === id);
+      if (!prod) return alert('Data produk tidak ditemukan.');
+      const input = prompt(`Tambah stok untuk "${name}" (Stok saat ini: ${currStock}):\n\nMasukkan jumlah stok yang masuk (contoh: 10):`, '10');
+      if (input === null) return;
+      const addQty = parseInt(input, 10);
+      if (isNaN(addQty) || addQty <= 0) return alert('Jumlah stok masuk harus angka positif.');
+      const newStock = Math.max(0, (parseInt(currStock, 10) || 0) + addQty);
+
+      try {
+        const res = await fetch(`${API_BASE}/api/mini/product/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            item_name: prod.item_name,
+            sku: prod.sku || null,
+            category: prod.category,
+            price: prod.price,
+            stock: newStock,
+            image_url: prod.image_url,
+            tenant_id: activeTenantId,
+            allow_duplicate: true
+          })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.success) {
+          alert(`✅ Stok "${name}" bertambah +${addQty} (Sekarang: ${newStock}).`);
+          await loadPosCatalog();
+          await loadDashboardData();
+        } else {
+          alert(data.detail || 'Gagal menambah stok.');
+        }
+      } catch (e) {
+        alert('Gagal menambah stok: koneksi bermasalah.');
+      }
+    }
+
+    async function deleteSkuProduct(id, name) {
+      if (!confirm(`Hapus produk "${name}" secara permanen?`)) return;
+      try {
+        const res = await fetch(`${API_BASE}/api/mini/product/${id}`, { method: 'DELETE' });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.success) {
+          alert(`✅ Produk "${name}" berhasil dihapus.`);
+          await loadPosCatalog();
+          await loadDashboardData();
+        } else {
+          alert(data.detail || 'Gagal menghapus produk (hanya Owner yang dapat menghapus).');
+        }
+      } catch (e) {
+        alert('Gagal menghapus produk: koneksi bermasalah.');
+      }
+    }
+
+    async function refreshAutoSkuPreview(forceAuto = false) {
+      const skuInput = document.getElementById('m-prod-sku');
+      if (!skuInput) return;
+      if (forceAuto) isManualSkuEdited = false;
+      if (isManualSkuEdited && !forceAuto) return;
+
+      const name = document.getElementById('m-prod-name')?.value.trim() || 'Produk';
+      const cat = document.getElementById('m-prod-cat')?.value || 'Umum';
+      try {
+        const res = await fetch(`${API_BASE}/api/mini/product/next-sku?name=${encodeURIComponent(name)}&category=${encodeURIComponent(cat)}&tenant_id=${activeTenantId}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.sku) {
+            skuInput.value = data.sku;
+            validateManualSkuInput(true);
+          }
+        }
+      } catch (e) { }
+    }
+
+    function validateManualSkuInput(fromAuto = false) {
+      if (!fromAuto) isManualSkuEdited = true;
+      const skuInput = document.getElementById('m-prod-sku');
+      const errBox = document.getElementById('m-prod-sku-error');
+      if (!skuInput || !errBox) return true;
+
+      const val = skuInput.value.trim().toUpperCase();
+      if (!val) {
+        errBox.style.display = 'none';
+        return true;
+      }
+      const conflict = allCatalogProducts.find(p => p.sku && p.sku.toUpperCase() === val);
+      if (conflict) {
+        errBox.innerHTML = `❌ <b>Exception SKU Duplikat:</b> Kode <code>${escHtml(val)}</code> sudah dipakai oleh <b>${escHtml(conflict.item_name)}</b>. Gunakan kode lain atau klik <b>🔄 Auto</b>.`;
+        errBox.style.display = 'block';
+        return false;
+      }
+      errBox.style.display = 'none';
+      return true;
+    }
+
+    function onSkuRefSelect(selectEl) {
+      const val = selectEl?.value;
+      if (!val) return;
+      const match = allCatalogProducts.find(p => p.sku === val);
+      if (match) {
+        alert(`ℹ️ Info SKU Terdaftar:\n\nSKU: ${match.sku}\nProduk: ${match.item_name}\nKategori: ${match.category}\nHarga: ${fmtRp(match.price)}\nStok: ${match.stock ?? 0}\n\nSetiap produk baru harus memakai kode SKU yang berbeda.`);
+      }
+      selectEl.value = '';
+    }
+
+    function onAddProdNameOrCatChange() {
+      clearTimeout(addProdDebounceTimer);
+      addProdDebounceTimer = setTimeout(async () => {
+        await refreshAutoSkuPreview(false);
+        const name = document.getElementById('m-prod-name')?.value.trim() || '';
+        const warnBox = document.getElementById('m-prod-name-warning');
+        if (!warnBox) return;
+        if (name.length < 3) {
+          warnBox.style.display = 'none';
+          return;
+        }
+        try {
+          const res = await fetch(`${API_BASE}/api/mini/product/check-duplicate?name=${encodeURIComponent(name)}&tenant_id=${activeTenantId}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.has_similar && data.warning) {
+              const firstSim = (data.similar_products && data.similar_products[0]) ? data.similar_products[0] : null;
+              const editBtnHtml = firstSim
+                ? `<div style="margin-top:6px;"><button type="button" onclick="closeAddProdModal(); openEditProductModal(${firstSim.id});" style="background:rgba(34,197,94,0.2); border:1px solid rgba(34,197,94,0.5); color:#4ade80; border-radius:6px; padding:4px 8px; font-size:11px; font-weight:700; cursor:pointer;">➕ Edit / Tambah Stok "${escHtml(firstSim.item_name)}" Saja</button></div>`
+                : '';
+              warnBox.innerHTML = `⚠️ <b>Peringatan Kemiripan/Duplikasi:</b> ${escHtml(data.warning)}${editBtnHtml}`;
+              warnBox.style.display = 'block';
+              return;
+            }
+          }
+        } catch (e) { }
+        warnBox.style.display = 'none';
+      }, 300);
+    }
+
     // ── Add Master Product ──
     function openAddProductModal() {
+      isManualSkuEdited = false;
       selectedNewProdFile = null;
       const fileInput = document.getElementById('m-prod-file-input');
       if (fileInput) fileInput.value = '';
@@ -8760,8 +9063,14 @@
       if (nameHint) nameHint.textContent = 'Belum dipilih';
       const previewBox = document.getElementById('m-prod-img-preview-box');
       if (previewBox) previewBox.style.display = 'none';
+      const warnBox = document.getElementById('m-prod-name-warning');
+      if (warnBox) warnBox.style.display = 'none';
+      const errBox = document.getElementById('m-prod-sku-error');
+      if (errBox) errBox.style.display = 'none';
 
+      populateSkuRefDropdown();
       document.getElementById('add-prod-modal').classList.add('active');
+      refreshAutoSkuPreview(true);
     }
 
     function openAddProductModalForCat(catName) {
@@ -8785,6 +9094,9 @@
       const stock = stockVal === '' ? 0 : Math.max(0, parseInt(stockVal) || 0);
 
       if (!name || price <= 0) return alert('Nama dan harga wajib diisi.');
+      if (!validateManualSkuInput(!isManualSkuEdited)) {
+        return alert('Kode SKU sudah digunakan produk lain. Silakan ubah atau klik 🔄 Auto.');
+      }
 
       const saveBtn = document.getElementById('btn-save-new-prod');
       const origText = saveBtn ? saveBtn.textContent : '';

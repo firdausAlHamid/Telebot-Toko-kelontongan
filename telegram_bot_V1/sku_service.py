@@ -28,21 +28,36 @@ def generate_unique_sku(
     category: str | None = None,
     tenant_id: int | None = None,
 ) -> str:
-    """Generate a guaranteed-unique SKU code for a product."""
+    """Generate a guaranteed-unique sequential SKU code for a product."""
     cat_part = _clean_code_part(category, "PRD", 3)
     name_part = _clean_code_part(item_name, "ITM", 3)
     prefix = f"SKU-{cat_part}-{name_part}"
 
+    # Find highest existing numeric suffix for this prefix (auto-increment per prefix)
+    existing_skus = (
+        db.query(Product.sku)
+        .filter(Product.sku.like(f"{prefix}-%"))
+        .all()
+    )
+    max_seq = 0
+    for (sku_str,) in existing_skus:
+        if not sku_str:
+            continue
+        tail = sku_str.rsplit("-", 1)[-1]
+        if tail.isdigit():
+            max_seq = max(max_seq, int(tail))
+
+    seq = max_seq + 1
     for _ in range(50):
-        suffix = secrets.token_hex(2).upper()
-        candidate = f"{prefix}-{suffix}"
+        candidate = f"{prefix}-{seq:04d}"
         exists = db.query(Product.id).filter(Product.sku == candidate).first()
         if not exists:
             return candidate
+        seq += 1
 
-    # Fallback with longer random suffix
+    # Fallback with random suffix if somehow exhausted
     while True:
-        suffix = secrets.token_hex(4).upper()
+        suffix = secrets.token_hex(3).upper()
         candidate = f"{prefix}-{suffix}"
         exists = db.query(Product.id).filter(Product.sku == candidate).first()
         if not exists:

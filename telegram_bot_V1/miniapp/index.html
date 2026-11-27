@@ -1170,7 +1170,7 @@
     let cart = {}; // { productId: { item, qty } }
     let selectedPayment = 'qris';
     let currentDataMode = localStorage.getItem('pos_data_mode') || 'simulasi';
-    let activeTenantId = (currentDataMode === 'asli') ? 3 : 2;
+    let activeTenantId = (currentDataMode === 'asli') ? 1 : 6;
     let storeQrisImageUrl = null;
     let currentQrisViewMode = 'store';
     let currentQrisOrderId = null;
@@ -1182,7 +1182,7 @@
       if (currentDataMode === mode) return;
       currentDataMode = mode;
       localStorage.setItem('pos_data_mode', mode);
-      activeTenantId = (mode === 'asli') ? 3 : 2;
+      activeTenantId = (mode === 'asli') ? 1 : 6;
 
       // Reset keranjang belanja pembeli saat ganti mode
       cart = {};
@@ -1340,11 +1340,11 @@
       const urlParams = new URLSearchParams(window.location.search);
       const paramTenantId = urlParams.get('tenant_id') || urlParams.get('toko');
       if (paramTenantId) {
-        activeTenantId = parseInt(paramTenantId) || 2;
-        currentDataMode = (activeTenantId === 3) ? 'asli' : 'simulasi';
+        activeTenantId = parseInt(paramTenantId) || 1;
+        currentDataMode = (activeTenantId === 1) ? 'asli' : 'simulasi';
       } else {
         currentDataMode = localStorage.getItem('pos_data_mode') || 'simulasi';
-        activeTenantId = (currentDataMode === 'asli') ? 3 : 2;
+        activeTenantId = (currentDataMode === 'asli') ? 1 : 6;
       }
       updateDataModeUI();
 
@@ -1359,7 +1359,7 @@
         });
         if (roleRes.ok) {
           const roleData = await roleRes.json();
-          if (roleData.tenant_id && !paramTenantId) {
+          if (roleData.tenant_id && !paramTenantId && !localStorage.getItem('pos_data_mode')) {
             activeTenantId = roleData.tenant_id;
           }
           if (roleData.role === 'kasir' || roleData.role === 'owner') {
@@ -1714,6 +1714,9 @@
       document.getElementById('pay-opt-cod').classList.toggle('active', method === 'cod');
       document.getElementById('pay-opt-transfer').classList.toggle('active', method === 'transfer');
       document.getElementById('pay-opt-qris').classList.toggle('active', method === 'qris');
+      if (method === 'qris') {
+        fetchStoreDetails();
+      }
     }
 
     async function submitFinalOrder() {
