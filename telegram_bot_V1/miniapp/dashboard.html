@@ -5379,7 +5379,7 @@
     };
 
     let currentDataMode = localStorage.getItem('pos_data_mode') || 'simulasi';
-    let activeTenantId = (currentDataMode === 'asli') ? 1 : 6;
+    let activeTenantId = (currentDataMode === 'asli') ? 3 : 2;
 
     const headers = {
       'Content-Type': 'application/json',
@@ -5393,7 +5393,7 @@
       if (currentDataMode === mode) return;
       currentDataMode = mode;
       localStorage.setItem('pos_data_mode', mode);
-      activeTenantId = (mode === 'asli') ? 1 : 6;
+      activeTenantId = (mode === 'asli') ? 3 : 2;
       headers['X-Tenant-Id'] = String(activeTenantId);
 
       // Reset cart & active selections
